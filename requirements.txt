@@ -1,2 +1,6 @@
 Flask
 gunicorn
+Flask-SQLAlchemy
+pymysql
+cryptography
+python-dotenv
