@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Hàng</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
+        /* Ô nhập liệu lớn, dễ nhìn */
+        #barcodeInput { 
+            width: 100%; 
+            padding: 15px; 
+            font-size: 20px; 
+            box-sizing: border-box; 
+            margin-bottom: 15px; 
+            border: 2px solid #007bff; 
+            border-radius: 5px; 
+            outline: none;
+        }
+        #barcodeInput:focus { background-color: #e8f0fe; }
+
+        .scan-list { margin-top: 10px; }
+        .scan-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .scan-item:first-child { background-color: #d4edda; font-weight: bold; } /* Item mới nhất màu xanh */
+        
+        .btn-back { display: inline-block; margin-bottom: 15px; text-decoration: none; color: #666; font-size: 16px; padding: 5px 0; }
+        
+        /* Style cho các ô chọn (Dropdown) */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #333; }
+        .form-group select { 
+            width: 100%; padding: 12px; font-size: 16px; 
+            border: 1px solid #ccc; border-radius: 5px; 
+            background-color: #fff;
+        }
+
+        /* Modal styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 8px; position: relative; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; position: absolute; right: 15px; top: 5px; }
+        .close:hover, .close:focus { color: black; text-decoration: none; cursor: pointer; }
+        .modal-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .modal-table th, .modal-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .modal-table th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn-back">← Quay lại Menu</a>
+        
+        <div class="form-group">
+            <label for="jobType">Job No Type</label>
+            <select id="jobType">
+                {% for type in job_types %}
+                <option value="{{ type }}">{{ type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="palletType">Loại Pallet</label>
+            <select id="palletType">
+                <option value="1.2">1.2m</option>
+                <option value="1.6">1.6m</option>
+                <option value="1.9">1.9m</option>
+                <option value="loose">Loose Carton</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="palletNo">Số Pallet</label>
+            <select id="palletNo">
+                {% for i in available_pallets %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- autocomplete="off" để tránh bàn phím ảo che khuất hoặc gợi ý cũ -->
+        <input type="text" id="barcodeInput" placeholder="Quét mã vạch..."  autocomplete="off">
+        
+        <div id="status" style="margin-bottom: 10px; font-size: 18px;">
+            <div style="font-size: 0.9em; color: #333; margin-bottom: 5px; background: #eee; padding: 5px; border-radius: 4px;">
+                Job: <span id="jobTotal" style="font-weight:bold">0</span> | 
+                Đã xong: <span id="jobScanned" style="font-weight:bold; color:green">0</span> |
+                Còn lại: <span id="jobRemain" style="font-weight:bold; color:red">0</span>
+                <div style="width: 100%; background-color: #ccc; border-radius: 4px; margin-top: 5px; height: 15px; overflow: hidden;">
+                    <div id="progressBar" style="width: 0%; height: 100%; background-color: #28a745; text-align: center; line-height: 15px; color: white; font-size: 10px; transition: width 0.3s;">0%</div>
+                </div>
+            </div>
+            Đã scan : <span id="count">0</span><br>
+            <strong>Tổng Pallet <span id="lblPallet"></span>: <span id="palletTotal" style="color: #007bff; font-size: 1.2em;">0</span></strong>
+            <div id="palletDetails" style="font-size: 0.9em; color: #555; margin-top: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #007bff; display: none;"></div>
+        </div>
+        <div class="scan-list" id="scanList">
+            <!-- Kết quả quét sẽ hiện ở đây -->
+        </div>
+        
+        <!-- Bảng lịch sử quét -->
+        <div style="margin-top: 20px;">
+            <h3 style="font-size: 18px; margin-bottom: 10px; color: #333;">Danh sách đã scan (Theo Pallet)</h3>
+            <input type="text" id="searchInput" placeholder="Tìm kiếm Pallet hoặc SKU..." style="width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;">
+            <div style="overflow-x: auto; border: 1px solid #ddd; border-radius: 5px;">
+                <table id="historyTable" style="width: 100%; border-collapse: collapse; font-size: 14px; background: white;">
+                    <thead>
+                        <tr style="background-color: #f8f9fa; border-bottom: 2px solid #ddd;">
+                            <th style="padding: 10px; text-align: center; color: #555;">Pallet</th>
+                            <th style="padding: 10px; text-align: left; color: #555;">SKU</th>
+                            <th style="padding: 10px; text-align: center; color: #555;">Số lượng (SSCC)</th>
+                            <th style="padding: 10px; text-align: center; color: #555;">Xóa</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for SKU Details -->
+    <div id="skuModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin-top: 0;">Chi tiết SKU</h3>
+            <div id="modalBody">Đang tải...</div>
+        </div>
+    </div>
+
+    <script>
+        const input = document.getElementById('barcodeInput');
+        const list = document.getElementById('scanList');
+        const countSpan = document.getElementById('count');
+        const jobTotalSpan = document.getElementById('jobTotal');
+        const jobScannedSpan = document.getElementById('jobScanned');
+        const jobRemainSpan = document.getElementById('jobRemain');
+        const jobTypeSelect = document.getElementById('jobType');
+        const palletSelect = document.getElementById('palletNo');
+        const palletDetailsDiv = document.getElementById('palletDetails');
+        
+        // Modal Logic
+        const modal = document.getElementById('skuModal');
+        function closeModal() { modal.style.display = "none"; }
+        window.onclick = function(event) { if (event.target == modal) closeModal(); }
+
+        function showSkuDetails(sku) {
+            const type = jobTypeSelect.value;
+            document.getElementById('modalTitle').innerText = 'Chi tiết SKU: ' + sku;
+            document.getElementById('modalBody').innerHTML = 'Đang tải...';
+            modal.style.display = "block";
+
+            fetch('/api/sku_details', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type, sku: sku})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    if (data.details.length === 0) {
+                        document.getElementById('modalBody').innerHTML = '<p>Chưa có dữ liệu.</p>';
+                        return;
+                    }
+                    let totalQty = 0;
+                    let html = '<table class="modal-table"><thead><tr><th>Pallet</th><th>Số lượng</th></tr></thead><tbody>';
+                    data.details.forEach(d => {
+                        totalQty += d.qty;
+                        html += `<tr><td>${d.pallet}</td><td>${d.qty}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                    
+                    // Cập nhật tiêu đề với tổng số lượng
+                    document.getElementById('modalTitle').innerText = `Chi tiết SKU: ${sku} (Tổng: ${totalQty})`;
+                    document.getElementById('modalBody').innerHTML = html;
+                } else {
+                    document.getElementById('modalBody').innerText = 'Lỗi: ' + data.message;
+                }
+            })
+            .catch(e => document.getElementById('modalBody').innerText = 'Lỗi: ' + e);
+        }
+
+        // Hàm cập nhật thanh tiến trình
+        function updateProgressBar(total, scanned) {
+            let percent = 0;
+            if (total > 0) {
+                percent = Math.round((scanned / total) * 100);
+            }
+            const bar = document.getElementById('progressBar');
+            bar.style.width = percent + '%';
+            bar.innerText = percent + '%';
+        }
+
+        // Hàm lấy thống kê Job
+        function fetchJobStats() {
+            const type = jobTypeSelect.value;
+            fetch('/api/job_stats', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    jobTotalSpan.innerText = data.total_sscc;
+                    jobScannedSpan.innerText = data.scanned_sscc;
+                    jobRemainSpan.innerText = data.remain_sscc;
+                    updateProgressBar(data.total_sscc, data.scanned_sscc);
+                }
+            });
+        }
+
+        // Hàm lấy chi tiết Pallet hiện tại
+        function fetchPalletDetails() {
+            const type = jobTypeSelect.value;
+            const pallet = palletSelect.value;
+            
+            document.getElementById('lblPallet').innerText = pallet;
+
+            if (!pallet) {
+                document.getElementById('palletTotal').innerText = '0';
+                palletDetailsDiv.style.display = 'none';
+                return;
+            }
+
+            fetch('/api/pallet_details', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type, pallet_no: pallet})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    document.getElementById('palletTotal').innerText = data.pallet_count;
+                    
+                    // Hiển thị danh sách SKU
+                    const skuHtml = data.skus.length > 0 ? data.skus.map(s => `${s.sku}: <b>${s.qty}</b>`).join(', ') : 'Chưa có hàng';
+                    palletDetailsDiv.innerHTML = `Chi tiết: ${skuHtml}`;
+                    palletDetailsDiv.style.display = 'block';
+                }
+            });
+        }
+
+        // Hàm cập nhật danh sách Pallet khả dụng (trống)
+        function fetchPallets() {
+            fetch('/api/get_pallets')
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    palletSelect.innerHTML = '';
+                    data.pallets.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p;
+                        opt.innerText = p;
+                        palletSelect.appendChild(opt);
+                    });
+                    // Cập nhật chi tiết cho pallet đầu tiên (mặc định)
+                    if(data.pallets.length > 0) fetchPalletDetails();
+                }
+            });
+        }
+
+        // Hàm xóa scan
+        function deleteScan(pallet, sku) {
+            if(!confirm(`Bạn có chắc muốn xóa SKU ${sku} khỏi Pallet ${pallet}?`)) return;
+            
+            const type = jobTypeSelect.value;
+            fetch('/api/delete_scan', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type, pallet: pallet, sku: sku})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    fetchJobStats();
+                    fetchHistory();
+                    fetchPallets(); // Cập nhật lại danh sách Pallet sau khi xóa
+                    // fetchPallets sẽ tự gọi fetchPalletDetails
+                } else {
+                    alert('Lỗi: ' + data.message);
+                }
+            });
+        }
+
+        // Hàm lấy lịch sử quét của Job
+        function fetchHistory() {
+            const type = jobTypeSelect.value;
+            fetch('/api/get_history', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    const tbody = document.querySelector('#historyTable tbody');
+                    tbody.innerHTML = '';
+                    data.history.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid #eee';
+                        tr.innerHTML = `
+                            <td style="padding: 8px; text-align: center; font-weight: bold;">${item.pallet}</td>
+                            <td style="padding: 8px;"><a href="javascript:void(0)" onclick="showSkuDetails('${item.sku}')" style="color: #007bff; text-decoration: underline;">${item.sku}</a></td>
+                            <td style="padding: 8px; text-align: center; font-weight: bold;">${item.qty}</td>
+                            <td style="padding: 8px; text-align: center;"><button onclick="deleteScan('${item.pallet}', '${item.sku}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Xóa</button></td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            });
+        }
+
+        // Gọi khi đổi Job Type và khi mới vào trang
+        jobTypeSelect.addEventListener('change', () => {
+            fetchJobStats();
+            fetchHistory();
+            fetchPalletDetails();
+        });
+        palletSelect.addEventListener('change', fetchPalletDetails);
+        
+        fetchJobStats();
+        fetchHistory();
+        fetchPalletDetails(); // Gọi lần đầu khi load trang
+
+        let scanCount = 0;
+
+        // Giữ focus vào ô input bất kể click đi đâu (Chế độ Kiosk/Scanner)
+        // Chỉ focus khi modal không mở
+        document.addEventListener('click', (e) => {
+            if (modal.style.display !== "block" && e.target !== input && !e.target.closest('.modal-content')) {
+                input.focus();
+            }
+        });
+
+        // Chức năng tìm kiếm trong bảng lịch sử
+        document.getElementById('searchInput').addEventListener('keyup', function() {
+            const filter = this.value.toUpperCase();
+            const table = document.getElementById('historyTable');
+            const tr = table.getElementsByTagName('tr');
+
+            // Bắt đầu từ 1 để bỏ qua dòng tiêu đề (thead)
+            for (let i = 1; i < tr.length; i++) {
+                const tdPallet = tr[i].getElementsByTagName('td')[0];
+                const tdSku = tr[i].getElementsByTagName('td')[1];
+                if (tdPallet || tdSku) {
+                    const txtPallet = tdPallet.textContent || tdPallet.innerText;
+                    const txtSku = tdSku.textContent || tdSku.innerText;
+                    if (txtPallet.toUpperCase().indexOf(filter) > -1 || txtSku.toUpperCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+        });
+
+        // Xử lý khi máy quét gửi phím Enter
+        input.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const code = this.value.trim();
+                const jobType = document.getElementById('jobType').value;
+                const palletNo = document.getElementById('palletNo').value;
+                const palletType = document.getElementById('palletType').value;
+                
+                // Cập nhật số pallet đang hiển thị
+                document.getElementById('lblPallet').innerText = palletNo;
+
+                if (code) {
+                    // Gửi dữ liệu lên server xử lý
+                    fetch('/api/scan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ barcode: code, job_type: jobType, pallet_no: palletNo, pallet_type: palletType })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        const item = document.createElement('div');
+                        item.className = 'scan-item';
+                        
+                        if (data.success) {
+                            scanCount++;
+                            countSpan.innerText = scanCount;
+                            
+                            // Cập nhật tổng số lượng pallet từ server trả về
+                            if (data.pallet_count !== undefined) {
+                                document.getElementById('palletTotal').innerText = data.pallet_count;
+                            }
+                            
+                            // Cập nhật thống kê Job
+                            if (data.total_sscc !== undefined) {
+                                jobTotalSpan.innerText = data.total_sscc;
+                                jobScannedSpan.innerText = data.scanned_sscc;
+                                jobRemainSpan.innerText = data.remain_sscc;
+                                updateProgressBar(data.total_sscc, data.scanned_sscc);
+                            }
+                            
+                            // Cập nhật lại bảng lịch sử
+                            fetchHistory();
+                            fetchPalletDetails(); // Cập nhật lại chi tiết pallet vừa quét
+
+                            item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
+                            item.style.backgroundColor = '#d4edda';
+                        } else {
+                            item.innerHTML = `<span>${code}</span> <span style="color:red; font-weight:bold">${data.message}</span>`;
+                            item.style.backgroundColor = '#f8d7da';
+                        }
+                        list.prepend(item);
+                    })
+                    .catch(err => alert('Lỗi kết nối server!'));
+
+                    // Xóa ô nhập để quét mã tiếp theo
+                    this.value = '';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
