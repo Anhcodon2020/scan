@@ -1,5 +1,6 @@
 import os
 import ssl
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
@@ -245,6 +246,89 @@ def sku_details():
         details = [{'pallet': row[0], 'qty': row[1]} for row in result]
         return jsonify({'success': True, 'sku': sku, 'details': details})
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/add-product')
+def manual_label_page():
+    # Lấy danh sách jobno_type
+    job_types = []
+    try:
+        result = db.session.execute(text("SELECT DISTINCT jobno_type FROM scanfile WHERE jobno_type IS NOT NULL"))
+        job_types = [row[0] for row in result]
+    except:
+        job_types = ['Normal', 'Urgent', 'Sample']
+
+    # Lấy danh sách Pallet khả dụng
+    available_pallets = []
+    try:
+        exclude_query = text("SELECT DISTINCT pallet FROM scanfile WHERE jobno_type IS NOT NULL AND pallet IS NOT NULL AND pallet != ''")
+        exclude_res = db.session.execute(exclude_query)
+        excluded_set = {str(row[0]) for row in exclude_res}
+        available_pallets = [i for i in range(1, 26) if str(i) not in excluded_set]
+    except:
+        available_pallets = list(range(1, 26))
+
+    return render_template('manual_label.html', job_types=job_types, available_pallets=available_pallets)
+
+@app.route('/api/get_job_skus', methods=['POST'])
+def get_job_skus():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+    try:
+        # Lấy danh sách SKU có item chưa gán pallet (khả dụng) trong Job
+        query = text("SELECT DISTINCT sku FROM scanfile WHERE jobno_type = :job_type AND (pallet IS NULL OR pallet = '')")
+        result = db.session.execute(query, {'job_type': job_type})
+        skus = [row[0] for row in result]
+        return jsonify({'success': True, 'skus': skus})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_sku_availability', methods=['POST'])
+def get_sku_availability():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+    sku = data.get('sku', '')
+    try:
+        query = text("SELECT COUNT(id) FROM scanfile WHERE jobno_type = :job_type AND sku = :sku AND (pallet IS NULL OR pallet = '')")
+        res = db.session.execute(query, {'job_type': job_type, 'sku': sku}).fetchone()
+        count = res[0] if res else 0
+        return jsonify({'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/manual_update', methods=['POST'])
+def manual_update():
+    data = request.get_json()
+    job_type = data.get('job_type')
+    sku = data.get('sku')
+    pallet_type = data.get('pallet_type')
+    pallet_no = data.get('pallet_no')
+    quantity = int(data.get('quantity', 0))
+
+    if quantity <= 0:
+        return jsonify({'success': False, 'message': 'Số lượng phải lớn hơn 0'})
+
+    try:
+        # Lấy danh sách ID cần update (giới hạn theo số lượng yêu cầu)
+        select_ids_query = text("""
+            SELECT id FROM scanfile 
+            WHERE jobno_type = :job_type AND sku = :sku AND (pallet IS NULL OR pallet = '') 
+            LIMIT :limit
+        """)
+        ids_res = db.session.execute(select_ids_query, {'job_type': job_type, 'sku': sku, 'limit': quantity})
+        ids = [row[0] for row in ids_res]
+
+        if not ids or len(ids) < quantity:
+             return jsonify({'success': False, 'message': f'Không đủ số lượng khả dụng (Tìm thấy {len(ids)})'})
+
+        # Cập nhật pallet, pallet_type và thời gian
+        update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type, time_scan = :time_scan WHERE id IN :ids")
+        db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'time_scan': datetime.now(), 'ids': tuple(ids)})
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': f'Đã cập nhật {len(ids)} thùng vào Pallet {pallet_no}'})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == '__main__':

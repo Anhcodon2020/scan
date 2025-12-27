@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tạo Nhãn Thủ Công</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn-back { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #666; font-size: 16px; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #333; }
+        .form-group select, .form-group input { 
+            width: 100%; padding: 12px; font-size: 16px; 
+            border: 1px solid #ccc; border-radius: 5px; 
+            box-sizing: border-box;
+            background-color: #fff;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: #007bff; outline: none; }
+
+        .btn-submit {
+            width: 100%; padding: 15px; background-color: #007bff; color: white; 
+            border: none; border-radius: 5px; font-size: 18px; font-weight: bold; cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn-submit:hover { background-color: #0056b3; }
+        .btn-submit:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        .info-box { background-color: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; color: #495057; }
+        .error { color: red; font-size: 14px; margin-top: 5px; }
+        .success { color: green; font-size: 14px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn-back">← Quay lại Menu</a>
+        <h2 style="margin-top: 0; color: #333;">Tạo Nhãn Thủ Công</h2>
+
+        <div class="form-group">
+            <label for="jobType">Job No Type</label>
+            <select id="jobType">
+                {% for type in job_types %}
+                <option value="{{ type }}">{{ type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="sku">SKU (Sản phẩm)</label>
+            <select id="sku">
+                <option value="">-- Chọn SKU --</option>
+            </select>
+            <div id="skuInfo" class="info-box" style="display: none; margin-top: 5px;">
+                Khả dụng: <strong id="availableQty">0</strong> carton
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="palletType">Loại Pallet</label>
+            <select id="palletType">
+                <option value="1.2">1.2m</option>
+                <option value="1.6">1.6m</option>
+                <option value="1.9">1.9m</option>
+                <option value="loose">Loose Carton</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="palletNo">Số Pallet</label>
+            <select id="palletNo">
+                {% for i in available_pallets %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="quantity">Số lượng Carton cần tạo</label>
+            <input type="number" id="quantity" min="1" placeholder="Nhập số lượng...">
+        </div>
+
+        <button id="btnSubmit" class="btn-submit">Cập Nhật</button>
+        <div id="message" style="margin-top: 10px; text-align: center; font-weight: bold;"></div>
+    </div>
+
+    <script>
+        const jobTypeSelect = document.getElementById('jobType');
+        const skuSelect = document.getElementById('sku');
+        const availableQtySpan = document.getElementById('availableQty');
+        const skuInfoDiv = document.getElementById('skuInfo');
+        const btnSubmit = document.getElementById('btnSubmit');
+        const messageDiv = document.getElementById('message');
+
+        // Load danh sách SKU khi đổi Job Type
+        function loadSkus() {
+            const jobType = jobTypeSelect.value;
+            skuSelect.innerHTML = '<option value="">Đang tải...</option>';
+            
+            fetch('/api/get_job_skus', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType})
+            })
+            .then(r => r.json())
+            .then(data => {
+                skuSelect.innerHTML = '<option value="">-- Chọn SKU --</option>';
+                if(data.success) {
+                    data.skus.forEach(sku => {
+                        const opt = document.createElement('option');
+                        opt.value = sku;
+                        opt.innerText = sku;
+                        skuSelect.appendChild(opt);
+                    });
+                }
+            });
+        }
+
+        // Lấy số lượng khả dụng khi chọn SKU
+        skuSelect.addEventListener('change', function() {
+            const sku = this.value;
+            const jobType = jobTypeSelect.value;
+            if(!sku) { skuInfoDiv.style.display = 'none'; return; }
+
+            fetch('/api/get_sku_availability', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType, sku: sku})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    availableQtySpan.innerText = data.count;
+                    skuInfoDiv.style.display = 'block';
+                }
+            });
+        });
+
+        jobTypeSelect.addEventListener('change', loadSkus);
+        loadSkus(); // Load lần đầu
+
+        // Xử lý nút Cập nhật
+        btnSubmit.addEventListener('click', function() {
+            const qty = parseInt(document.getElementById('quantity').value);
+            const max = parseInt(availableQtySpan.innerText);
+            
+            if (!qty || qty <= 0) { alert('Vui lòng nhập số lượng hợp lệ'); return; }
+            if (qty > max) { alert(`Số lượng yêu cầu (${qty}) vượt quá số lượng khả dụng (${max})`); return; }
+
+            const payload = {
+                job_type: jobTypeSelect.value,
+                sku: skuSelect.value,
+                pallet_type: document.getElementById('palletType').value,
+                pallet_no: document.getElementById('palletNo').value,
+                quantity: qty
+            };
+
+            btnSubmit.disabled = true;
+            messageDiv.innerText = 'Đang xử lý...';
+            messageDiv.className = '';
+
+            fetch('/api/manual_update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                btnSubmit.disabled = false;
+                if(data.success) {
+                    messageDiv.innerText = data.message;
+                    messageDiv.className = 'success';
+                    // Reset form và load lại số lượng
+                    document.getElementById('quantity').value = '';
+                    skuSelect.dispatchEvent(new Event('change'));
+                } else {
+                    messageDiv.innerText = 'Lỗi: ' + data.message;
+                    messageDiv.className = 'error';
+                }
+            })
+            .catch(e => {
+                btnSubmit.disabled = false;
+                messageDiv.innerText = 'Lỗi kết nối';
+                messageDiv.className = 'error';
+            });
+        });
+    </script>
+</body>
+</html>
