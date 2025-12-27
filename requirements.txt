@@ -1,6 +1,6 @@
-Flask
-gunicorn
-Flask-SQLAlchemy
-pymysql
-cryptography
-python-dotenv
+Flask==3.0.0
+gunicorn==21.2.0
+Flask-SQLAlchemy==3.1.1
+PyMySQL==1.1.0
+cryptography==42.0.8
+python-dotenv==1.0.1
