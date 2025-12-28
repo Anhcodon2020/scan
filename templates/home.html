@@ -50,6 +50,10 @@
 </head>
 <body>
     <div class="container">
+        <div style="display: flex; justify-content: flex-end; align-items: center; padding: 10px 0;">
+             <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
+             <a href="/logout" style="text-decoration: none; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+        </div>
         <div class="header">
             <h1>Hệ Thống Quét Hàng</h1>
             <p>Chào mừng bạn đến với ứng dụng.</p>
@@ -61,6 +65,9 @@
             <a href="/add-product">Tạo nhãn thủ công</a>
             <a href="/statistics">Thống Kê</a>
             <a href="/print-label">In Tem</a>
+            {% if session.get('role') == 'admin' %}
+            <a href="/users" style="background-color: #6f42c1; color: white; border: none;">Quản lý người dùng</a>
+            {% endif %}
         </div>
     </div>
 </body>

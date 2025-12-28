@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Người Dùng</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
+        .btn-back { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #666; font-size: 16px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
+        .btn-add { background-color: #28a745; margin-bottom: 15px; font-size: 16px; padding: 10px 20px; }
+        .btn-edit { background-color: #ffc107; color: #333; margin-right: 5px; }
+        .btn-delete { background-color: #dc3545; }
+        .btn:hover { opacity: 0.9; }
+
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 400px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
+        .close:hover { color: #000; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <a href="/" class="btn-back" style="margin-bottom: 0;">← Quay lại Menu</a>
+            <div style="display: flex; align-items: center;">
+                <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="margin-bottom: 0; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+            </div>
+        </div>
+        
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Quản Lý Người Dùng</h2>
+        
+        <button class="btn btn-add" onclick="openModal()">+ Thêm Người Dùng Mới</button>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50px;">ID</th>
+                    <th>Tên đăng nhập</th>
+                    <th>Vai trò (Role)</th>
+                    <th style="width: 150px; text-align: center;">Hành động</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody">
+                <tr><td colspan="4" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal Thêm/Sửa -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin-top: 0;">Thêm Người Dùng</h3>
+            <input type="hidden" id="userId">
+            
+            <div class="form-group">
+                <label>Tên đăng nhập</label>
+                <input type="text" id="username" placeholder="Nhập tên đăng nhập">
+            </div>
+            
+            <div class="form-group">
+                <label>Mật khẩu</label>
+                <input type="password" id="password" placeholder="Nhập mật khẩu">
+                <small id="passHelp" style="color: #666; display: none;">Để trống nếu không muốn đổi mật khẩu</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Vai trò</label>
+                <select id="role">
+                    <option value="scanner">Scanner (Chỉ Scan)</option>
+                    <option value="printer">Printer (In & Thống kê)</option>
+                    <option value="admin">Admin (Toàn quyền)</option>
+                </select>
+            </div>
+            
+            <button class="btn btn-add" style="width: 100%; margin-bottom: 0;" onclick="saveUser()">Lưu Thông Tin</button>
+        </div>
+    </div>
+
+    <script>
+        const modal = document.getElementById('userModal');
+        
+        function loadUsers() {
+            fetch('/api/users/list')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('userTableBody');
+                tbody.innerHTML = '';
+                if(data.success && data.users.length > 0) {
+                    data.users.forEach(u => {
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>${u.id}</td>
+                                <td><strong>${u.username}</strong></td>
+                                <td>${u.role}</td>
+                                <td style="text-align: center;">
+                                    <button class="btn btn-edit" onclick="editUser(${u.id}, '${u.username}', '${u.role}')">Sửa</button>
+                                    <button class="btn btn-delete" onclick="deleteUser(${u.id}, '${u.username}')">Xóa</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Chưa có dữ liệu</td></tr>';
+                }
+            });
+        }
+
+        function openModal() {
+            document.getElementById('userId').value = '';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('role').value = 'scanner';
+            document.getElementById('modalTitle').innerText = 'Thêm Người Dùng';
+            document.getElementById('passHelp').style.display = 'none';
+            modal.style.display = "block";
+        }
+
+        function editUser(id, username, role) {
+            document.getElementById('userId').value = id;
+            document.getElementById('username').value = username;
+            document.getElementById('password').value = '';
+            document.getElementById('role').value = role;
+            document.getElementById('modalTitle').innerText = 'Sửa Người Dùng';
+            document.getElementById('passHelp').style.display = 'block';
+            modal.style.display = "block";
+        }
+
+        function closeModal() { modal.style.display = "none"; }
+        window.onclick = function(e) { if (e.target == modal) closeModal(); }
+
+        function saveUser() {
+            const id = document.getElementById('userId').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const role = document.getElementById('role').value;
+
+            fetch('/api/users/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, username, password, role})
+            }).then(r => r.json()).then(data => {
+                if(data.success) { closeModal(); loadUsers(); }
+                else { alert(data.message); }
+            });
+        }
+
+        function deleteUser(id, username) {
+            if(confirm('Bạn có chắc muốn xóa user: ' + username + '?')) {
+                fetch('/api/users/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id})
+                }).then(r => r.json()).then(data => {
+                    if(data.success) loadUsers();
+                    else alert(data.message);
+                });
+            }
+        }
+
+        loadUsers();
+    </script>
+</body>
+</html>

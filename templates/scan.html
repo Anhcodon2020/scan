@@ -49,7 +49,13 @@
 </head>
 <body>
     <div class="container">
-        <a href="/" class="btn-back">← Quay lại Menu</a>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <a href="/" class="btn-back" style="margin-bottom: 0;">← Quay lại Menu</a>
+            <div style="display: flex; align-items: center;">
+                <span style="margin-right: 10px; font-weight: 600; color: #333; font-size: 14px;">Xin chào, {{ session.get('user') }}</span>
+                <a href="/logout" style="text-decoration: none; color: #dc3545; font-weight: bold; font-size: 14px;">Đăng xuất</a>
+            </div>
+        </div>
         
         <div id="selectionForm">
             <div class="form-group">
@@ -85,6 +91,7 @@
         <div id="scanHeader" style="display:none; margin-bottom: 15px; padding: 10px; background: #e8f0fe; border-radius: 5px; border: 1px solid #b8daff; color: #333;">
             <div><strong>Job:</strong> <span id="lblJobTypeDisplay"></span></div>
             <div style="margin-top:5px;"><strong>Pallet:</strong> <span id="lblPalletDisplay" style="font-size:1.2em; color:#007bff; font-weight:bold;"></span> (<span id="lblPalletTypeDisplay"></span>)</div>
+            <button onclick="finishPallet()" style="margin-top: 10px; width: 100%; padding: 8px; background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">✅ Báo Xong Pallet</button>
         </div>
 
         <button id="btnToggleScan" style="margin-bottom: 15px; width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">Bắt đầu Scan</button>
@@ -684,6 +691,25 @@
                     setTimeout(() => { isProcessing = false; }, 500);
                 });
             }
+        }
+
+        function finishPallet() {
+            const jobType = document.getElementById('jobType').value;
+            const palletNo = document.getElementById('palletNo').value;
+            const palletType = document.getElementById('palletType').value;
+
+            if(!confirm(`Xác nhận hoàn thành Pallet ${palletNo}? Thông báo sẽ được gửi đến bộ phận in.`)) return;
+
+            fetch('/api/finish_pallet', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType, pallet_no: palletNo, pallet_type: palletType})
+            })
+            .then(r => r.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(e => alert('Lỗi: ' + e));
         }
     </script>
 </body>

@@ -5,3 +5,5 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 from .scanfile import Scanfile
 from .masterdata import MasterData
+from .users import User
+from .log import Log

@@ -1,7 +1,8 @@
 import os
 import ssl
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, bindparam
 from config import Config
@@ -31,15 +32,95 @@ if db_url and db_url.startswith("mysql://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = os.environ.get('SECRET_KEY', 'kln_secret_key_change_me') # Key bảo mật cho session
 db = SQLAlchemy(app)
 
+# --- TỰ ĐỘNG TẠO BẢNG LOGS NẾU CHƯA CÓ (Dùng Raw SQL để tương thích) ---
+with app.app_context():
+    try:
+        # Kiểm tra và tạo bảng logs đơn giản
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username VARCHAR(255),
+                action VARCHAR(255),
+                message TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_read BOOLEAN DEFAULT 0
+            )
+        """))
+        db.session.commit()
+    except Exception as e:
+        print(f"Lỗi khởi tạo bảng logs (có thể bỏ qua nếu dùng DB khác SQLite): {e}")
+
+# --- DECORATOR KIỂM TRA ĐĂNG NHẬP ---
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# --- DECORATOR KIỂM TRA QUYỀN (ROLE) ---
+def role_required(allowed_roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'role' not in session or session['role'] not in allowed_roles:
+                return "Bạn không có quyền truy cập trang này! <a href='/logout'>Đăng xuất</a>", 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        try:
+            # Query bảng user (giả định cột: username, password, role)
+            query = text("SELECT username, password, role FROM users WHERE username = :username")
+            user = db.session.execute(query, {'username': username}).fetchone()
+            
+            if user and user[1] == password: # Lưu ý: Nên mã hóa mật khẩu trong thực tế
+                session['user'] = user[0]
+                session['role'] = user[2]
+                
+                if user[2] == 'scanner':
+                    return redirect(url_for('scan_page'))
+                elif user[2] == 'printer':
+                    return redirect(url_for('print_label_page'))
+                else: # admin
+                    return redirect(url_for('home'))
+            else:
+                return render_template('login.html', error="Sai tên đăng nhập hoặc mật khẩu")
+        except Exception as e:
+            return render_template('login.html', error=f"Lỗi kết nối: {str(e)}")
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def home():
+    # Điều hướng thông minh nếu không phải admin
+    if session.get('role') == 'scanner':
+        return redirect(url_for('scan_page'))
+    if session.get('role') == 'printer':
+        return redirect(url_for('print_label_page'))
     # Render trang home.html
     return render_template('home.html')
 
 
 @app.route('/scan')
+@login_required
+@role_required(['admin', 'scanner'])
 def scan_page():
     job_types = []
     try:
@@ -261,6 +342,8 @@ def sku_details():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/add-product')
+@login_required
+@role_required(['admin', 'printer'])
 def manual_label_page():
     # Lấy danh sách jobno_type
     job_types = []
@@ -360,6 +443,8 @@ def manual_update():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/print-label')
+@login_required
+@role_required(['admin', 'printer'])
 def print_label_page():
     # Lấy danh sách jobno_type để hiển thị dropdown
     job_types = []
@@ -387,14 +472,15 @@ def get_print_data():
                 s.sku, 
                 COUNT(s.id) as qty, 
                 MAX(s.tag_label) as tag_label,
-                MAX(m.weight) as sku_weight
+                MAX(m.weight) as sku_weight,
+                s.jobscan
                             
             FROM scanfile s
             LEFT JOIN masterdata m ON s.sku = m.sku
             WHERE s.jobno_type = :job_type 
               AND s.pallet IS NOT NULL 
               AND s.pallet != ''
-            GROUP BY s.pallet, s.pallet_type, s.sku
+            GROUP BY s.pallet, s.pallet_type, s.sku,s.jobscan
             ORDER BY s.pallet, s.sku
         """)
         
@@ -410,8 +496,9 @@ def get_print_data():
                 # Lấy tag_label, nếu null thì trả về chuỗi rỗng
                 'tag_label': 'Tem nhỏ' if row[4] else '',
                 # Lấy weight, nếu null (không tìm thấy trong masterdata) thì trả về 0
-                'sku_weight': float(row[5]) if row[5] is not None else 0
+                'sku_weight': float(row[5]) if row[5] is not None else 0,
                 # Lấy pallet_type, nếu null (không tìm thấy trong masterdata) thì trả về '
+                'jobscan':row[6]
                 
             })
 
@@ -444,6 +531,144 @@ def get_sscc_data():
             items.append(item)
 
         return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/update_jobscan', methods=['POST'])
+def update_jobscan():
+    data = request.get_json()
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    jobscan = data.get('jobscan')
+
+    try:
+        # Cập nhật jobscan cho các record thuộc job_type và pallet này mà chưa có jobscan (NULL hoặc rỗng)
+        query = text("UPDATE scanfile SET jobscan = :jobscan WHERE jobno_type = :job_type AND pallet = :pallet_no AND (jobscan IS NULL OR jobscan = '')")
+        db.session.execute(query, {'jobscan': jobscan, 'job_type': job_type, 'pallet_no': pallet_no})
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/users')
+@login_required
+@role_required(['admin'])
+def users_page():
+    return render_template('users.html')
+
+@app.route('/api/users/list', methods=['GET'])
+@login_required
+@role_required(['admin'])
+def get_users():
+    try:
+        query = text("SELECT id, username, role FROM users ORDER BY id")
+        result = db.session.execute(query)
+        users = [{'id': row[0], 'username': row[1], 'role': row[2]} for row in result]
+        return jsonify({'success': True, 'users': users})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/users/save', methods=['POST'])
+@login_required
+@role_required(['admin'])
+def save_user():
+    data = request.get_json()
+    user_id = data.get('id')
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role')
+
+    if not username or not role:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin bắt buộc'})
+
+    try:
+        if user_id: # Update
+            if password:
+                query = text("UPDATE users SET username = :u, password = :p, role = :r WHERE id = :id")
+                db.session.execute(query, {'u': username, 'p': password, 'r': role, 'id': user_id})
+            else:
+                query = text("UPDATE users SET username = :u, role = :r WHERE id = :id")
+                db.session.execute(query, {'u': username, 'r': role, 'id': user_id})
+        else: # Insert
+            if not password:
+                return jsonify({'success': False, 'message': 'Mật khẩu là bắt buộc khi tạo mới'})
+            # Check exist
+            check = db.session.execute(text("SELECT id FROM users WHERE username = :u"), {'u': username}).fetchone()
+            if check:
+                return jsonify({'success': False, 'message': 'Tên đăng nhập đã tồn tại'})
+            
+            query = text("INSERT INTO users (username, password, role) VALUES (:u, :p, :r)")
+            db.session.execute(query, {'u': username, 'p': password, 'r': role})
+        
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/users/delete', methods=['POST'])
+@login_required
+@role_required(['admin'])
+def delete_user():
+    data = request.get_json()
+    user_id = data.get('id')
+    try:
+        db.session.execute(text("DELETE FROM users WHERE id = :id"), {'id': user_id})
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+# --- API LOGGING & NOTIFICATION ---
+
+@app.route('/api/finish_pallet', methods=['POST'])
+@login_required
+def finish_pallet():
+    data = request.get_json()
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    pallet_type = data.get('pallet_type')
+    user = session.get('user', 'Unknown')
+
+    try:
+        # Đếm số lượng để ghi vào log
+        count_query = text("SELECT COUNT(id) FROM scanfile WHERE jobno_type = :job_type AND pallet = :pallet")
+        count_res = db.session.execute(count_query, {'job_type': job_type, 'pallet': pallet_no}).fetchone()
+        qty = count_res[0] if count_res else 0
+
+        message = f"Pallet {pallet_no} ({pallet_type}) - Job {job_type} đã hoàn thành. SL: {qty} thùng."
+        
+        # Ghi vào bảng logs
+        log_query = text("INSERT INTO logs (username, action, message, created_at, is_read) VALUES (:u, 'FINISH_PALLET', :m, :t, 0)")
+        db.session.execute(log_query, {'u': user, 'm': message, 't': datetime.now()})
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': 'Đã gửi thông báo cho bộ phận in!'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_logs', methods=['GET'])
+def get_logs():
+    try:
+        # Lấy 20 log mới nhất
+        query = text("SELECT id, username, action, message, created_at, is_read FROM logs ORDER BY id DESC LIMIT 20")
+        result = db.session.execute(query)
+        logs = [{'id': r[0], 'username': r[1], 'action': r[2], 'message': r[3], 'created_at': str(r[4]), 'is_read': bool(r[5])} for r in result]
+        return jsonify({'success': True, 'logs': logs})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/mark_read', methods=['POST'])
+def mark_read():
+    data = request.get_json()
+    log_id = data.get('id')
+    try:
+        db.session.execute(text("UPDATE logs SET is_read = 1 WHERE id = :id"), {'id': log_id})
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

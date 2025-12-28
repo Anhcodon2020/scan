@@ -26,6 +26,14 @@
         .btn-print { background-color: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
         
         /* Giao diện Tem in (Ẩn trên màn hình, hiện khi in) */
+        
+        /* Notification Box */
+        .notification-box { margin-bottom: 20px; border: 1px solid #bee5eb; background-color: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 5px; display: none; }
+        .log-item { padding: 8px; border-bottom: 1px solid #bee5eb; display: flex; justify-content: space-between; align-items: center; background: white; margin-bottom: 5px; border-radius: 4px; }
+        .log-item.unread { border-left: 4px solid #dc3545; font-weight: bold; }
+        .log-time { font-size: 0.85em; color: #666; margin-right: 10px; }
+        .btn-read { font-size: 0.8em; padding: 2px 8px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; }
+
         #printArea { display: none; }
 
         @media print {
@@ -83,14 +91,66 @@
             .sscc-cell strong { font-size: 12px; color: #000; margin-bottom: 5px; text-transform: uppercase; }
             .sscc-cell span { font-weight: normal; font-size: 16px; word-break: break-word; }
         }
+ .sku-qty-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+}
+
+.sku-label {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.qty-inline {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sku-value {
+    grid-column: 1 / span 2;
+    grid-row: 2;
+    font-size: 30px;
+    font-weight: bold;
+    line-height: 1.1;
+}
+
+.label {
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.qty-value {
+    font-size: 20px;
+    font-weight: bold;
+}
+
     </style>
 </head>
 <body>
 
     <!-- Phần điều khiển trên màn hình -->
     <div class="container screen-only">
-        <a href="/" class="btn-back">← Quay lại Menu</a>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <a href="/" class="btn-back" style="margin-bottom: 0;">← Quay lại Menu</a>
+            <div style="display: flex; align-items: center;">
+                <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="margin-bottom: 0; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+            </div>
+        </div>
         <h2>In Tem & Thống Kê Pallet</h2>
+
+        <!-- Khu vực thông báo -->
+        <div id="notificationArea" class="notification-box">
+            <h4 style="margin-top: 0; margin-bottom: 10px;">🔔 Thông báo từ Scanner</h4>
+            <div id="logList"></div>
+        </div>
 
         <div class="controls">
             <div class="form-group">
@@ -117,11 +177,12 @@
                     <th>Số lượng (SSCC)</th>
                     <th>Trọng lượng (Ước tính)</th>
                     <th>Ghi chú</th>
+                    <th>Job Scan</th>
                     <th>Hành động</th>
                 </tr>
             </thead>
             <tbody id="tableBody">
-                <tr><td colspan="7">Vui lòng chọn Job và tải dữ liệu</td></tr>
+                <tr><td colspan="8">Vui lòng chọn Job và tải dữ liệu</td></tr>
             </tbody>
         </table>
     </div>
@@ -150,10 +211,21 @@
 
         let currentData = [];
 
+        // Hàm thiết lập kích thước trang in động
+        function setPrintPageSize(size) {
+            let style = document.getElementById('print-page-size');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'print-page-size';
+                document.head.appendChild(style);
+            }
+            style.innerHTML = `@page { size: ${size}; margin: 0; }`;
+        }
+
         function loadData() {
             const jobType = document.getElementById('jobType').value;
             const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '<tr><td colspan="7">Đang tải...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8">Đang tải...</td></tr>';
 
             // Gọi API lấy dữ liệu in
             // API cần trả về danh sách các item đã scan, bao gồm:
@@ -168,11 +240,11 @@
                 if(data.success) {
                     processData(data.items);
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="7" style="color:red">Lỗi: ${data.message}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="color:red">Lỗi: ${data.message}</td></tr>`;
                 }
             })
             .catch(e => {
-                tbody.innerHTML = `<tr><td colspan="7" style="color:red">Lỗi kết nối: ${e}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="color:red">Lỗi kết nối: ${e}</td></tr>`;
             });
         }
 
@@ -195,7 +267,8 @@
                         skus: [],
                         total_qty: 0,
                         tag_label: item.tag_label || '',
-                        gross_weight: 0
+                        gross_weight: 0,
+                        jobscan: item.jobscan || ''
                     };
                 }
 
@@ -225,7 +298,7 @@
             document.getElementById('totalSSCC').innerText = totalSSCC;
 
             if (palletKeys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7">Không tìm thấy dữ liệu Pallet nào.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8">Không tìm thấy dữ liệu Pallet nào.</td></tr>';
                 return;
             }
 
@@ -247,6 +320,7 @@
                     <td>${p.total_qty}</td>
                     <td>${finalWeight.toFixed(2)} kg</td>
                     <td>${note}</td>
+                    <td>${p.jobscan}</td>
                     <td>
                         <button class="btn-print" onclick='printLabel(${JSON.stringify(p)}, ${finalWeight.toFixed(2)})'>In Tem Pallet</button>
                         <button class="btn-print" style="background-color: #17a2b8; margin-top: 5px;" onclick='printSSCC("${p.pallet_no}")'>In Tem SSCC</button>
@@ -260,10 +334,28 @@
             const printArea = document.getElementById('printArea');
             const jobType = document.getElementById('jobType').value;
             
-            // Tạo timestamp yyyymmddhhmmss
-            const now = new Date();
-            const fmt = n => n.toString().padStart(2, '0');
-            const jobScan = `${now.getFullYear()}${fmt(now.getMonth() + 1)}${fmt(now.getDate())}${fmt(now.getHours())}${fmt(now.getMinutes())}${fmt(now.getSeconds())}`;
+            let jobScan = palletData.jobscan;
+
+            if (!jobScan) {
+                // Tạo timestamp yyyymmddhhmmss
+                const now = new Date();
+                const fmt = n => n.toString().padStart(2, '0');
+                jobScan = `${now.getFullYear()}${fmt(now.getMonth() + 1)}${fmt(now.getDate())}${fmt(now.getHours())}${fmt(now.getMinutes())}${fmt(now.getSeconds())}`;
+
+                // Cập nhật jobscan vào database (chỉ những dòng chưa có jobscan)
+                fetch('/api/update_jobscan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        job_type: jobType,
+                        pallet_no: palletData.pallet_no,
+                        jobscan: jobScan
+                    })
+                }).then(() => {
+                    palletData.jobscan = jobScan;
+                    loadData(); // Tải lại dữ liệu để cập nhật hiển thị trên bảng
+                }).catch(err => console.error('Lỗi cập nhật jobscan:', err));
+            }
 
             // Xử lý hiển thị SKU dạng bảng
             let tableRows = '';
@@ -323,6 +415,7 @@
                 displayValue: false
             });
 
+            setPrintPageSize('A4'); // Thiết lập khổ giấy A4 cho tem Pallet (Nhãn lớn)
             window.print();
         }
 
@@ -348,34 +441,57 @@
                         printArea.innerHTML += `
                             <div class="sscc-label">
                                 <div class="sscc-cell">
-                                    <strong>FROM</strong>
-                                    <span>KLN </span>
+                                    <strong>FROM:</strong><br>
+                                     <span>KLN ORDC # 061</span>
                                 </div>
                                 <div class="sscc-cell">
-                                    <strong>Pallet No</strong>
-                                    <span style="font-size: 24px;">${item.pallet || '-'}</span>
+                                    <strong>TO:</strong>
+                                    <span>${item.ship_to || '-'}</span> <br>
+                                    <span>${item.master_add1 || '-'}</span> <br>
+                                    <span>${item.master_add2 || '-'}</span> <br>
+                                    <span>${item.master_add3 || '-'}</span> <br>
+                                    <span>${item.master_add4 || '-'}</span>
+                                </div>
+                                <div class="sscc-cell">
+                                    <strong>Customer</strong>
+                                    
                                 </div>
                                 
                                 <div class="sscc-cell">
-                                    <strong>SKU</strong>
-                                    <span>${item.sku || '-'}</span>
-                                </div>
-                                <div class="sscc-cell">
-                                    <strong>Ngày quét</strong>
-                                    <span>${item.time_scan || '-'}</span>
+                                    <strong>Carrier</strong><br>
+                                    <span>KLN Logistics</span>
                                 </div>
                                 
-                                <div class="sscc-cell sscc-full">
-                                    <strong>Loại Pallet / Ghi chú</strong>
-                                    <span>${item.pallet_type || '-'} ${note ? ' | ' + note : ''}</span>
-                                </div>
                                 
                                 <div class="sscc-cell sscc-full" style="background: #eee;">
-                                    <span style="font-size: 20px;">CHI TIẾT SSCC</span>
+                                    <span style="font-size: 20px;font-weight: bold">PO # </span><br>
+                                    <span style="font-size: 50px;font-weight: bold">${item.master_delivery}</span>
                                 </div>
-                                
+                                <div class="sscc-cell sscc-full" style="background:#eee;">
+                                    <div class="sku-qty-grid">
+                                        <div class="sku-label">SKU</div>
+                                        <div class="qty-inline">
+                                            <span class="label">Quantity</span>
+                                            <span class="qty-value">${item.qty}</span>
+                                        </div>
+
+                                        <div class="sku-value">${item.sku}</div>
+                                        
+                                    </div>
+
+                                    <svg class="barcode-sscc"
+                                        data-value="${item.sku}"
+                                        data-format="CODE128"
+                                        data-height="40"
+                                        data-width="2"
+                                        data-displayValue="false">
+                                    </svg>
+                                </div>
+                                                                
                                 <div class="sscc-cell sscc-full">
-                                    <svg class="barcode-sscc" data-value="${barcodeVal}" data-format="CODE128" data-height="80" data-width="2" data-displayValue="true"></svg>
+                                   <div style="font-size: 15px;font-weight: bold">SSCC </div>
+                                    <svg class="barcode-sscc" data-value="${barcodeVal}" data-format="CODE128" data-height="80" data-width="2" data-displayValue="false"></svg>
+                                    <div style="font-size: 15px;">${barcodeVal} </div>
                                 </div>
                             </div>
                         `;
@@ -384,6 +500,7 @@
                     // Khởi tạo barcode cho tất cả các tem SSCC
                     JsBarcode(".barcode-sscc").init();
                     
+                    setPrintPageSize('100mm 150mm'); // Thiết lập khổ giấy 100x150mm cho tem SSCC (Nhãn nhỏ)
                     window.print();
                 } else {
                     alert('Lỗi: ' + data.message);
@@ -391,6 +508,49 @@
             })
             .catch(e => alert('Lỗi kết nối: ' + e));
         }
+
+        // --- LOGIC THÔNG BÁO ---
+        function loadLogs() {
+            fetch('/api/get_logs')
+            .then(r => r.json())
+            .then(data => {
+                if(data.success && data.logs.length > 0) {
+                    const logList = document.getElementById('logList');
+                    const area = document.getElementById('notificationArea');
+                    logList.innerHTML = '';
+                    let hasUnread = false;
+
+                    data.logs.forEach(log => {
+                        if (!log.is_read) hasUnread = true;
+                        const unreadClass = log.is_read ? '' : 'unread';
+                        const btnHtml = log.is_read ? '<span style="color:green">✔ Đã xem</span>' : `<button class="btn-read" onclick="markRead(${log.id})">Đánh dấu đã xem</button>`;
+                        
+                        logList.innerHTML += `
+                            <div class="log-item ${unreadClass}">
+                                <div>
+                                    <span class="log-time">[${log.created_at}]</span>
+                                    <span><strong>${log.username}:</strong> ${log.message}</span>
+                                </div>
+                                <div>${btnHtml}</div>
+                            </div>
+                        `;
+                    });
+                    area.style.display = 'block';
+                }
+            });
+        }
+
+        function markRead(id) {
+            fetch('/api/mark_read', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            }).then(() => loadLogs());
+        }
+
+        // Tự động tải log mỗi 10 giây
+        setInterval(loadLogs, 10000);
+        loadLogs(); // Tải ngay khi vào trang
     </script>
 </body>
 </html>
