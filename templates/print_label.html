@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Tem Pallet</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        
+        /* Giao diện màn hình điều khiển */
+        .screen-only { display: block; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
+        .btn-back { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #666; font-size: 16px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; }
+        .form-group { flex: 1; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group select, .btn-action { padding: 10px; width: 100%; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .btn-action { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; width: auto; min-width: 120px; }
+        .btn-action:hover { background-color: #0056b3; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #f8f9fa; }
+        .btn-print { background-color: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        
+        /* Giao diện Tem in (Ẩn trên màn hình, hiện khi in) */
+        #printArea { display: none; }
+
+        @media print {
+            @page { margin: 0; }
+            body * { visibility: hidden; }
+            .screen-only { display: none; }
+            #printArea, #printArea * { visibility: visible; }
+            #printArea { 
+                display: block; 
+                position: absolute; 
+                left: 0; top: 0; 
+                width: 100%; 
+                margin: 0; padding: 0;
+            }
+            
+            /* Style cho Tem */
+            .label-box {
+                border: 2px solid #000;
+                padding: 20px;
+                margin: 20px;
+                page-break-inside: avoid;
+                font-family: Arial, sans-serif;
+            }
+            .label-header { text-align: center; font-size: 50px; font-weight: 900; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 20px; }
+            .label-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 18px; }
+            .label-row strong { width: 150px; }
+            .label-big { font-size: 32px; font-weight: bold; text-align: center; margin: 20px 0; }
+            .note-tag { border: 2px solid #000; padding: 5px 10px; font-weight: bold; display: inline-block; margin-top: 10px; }
+            
+            /* Style cho Tem SSCC (Tem thùng) */
+            .sscc-label {
+                width: 100mm;
+                height: 150mm;
+                box-sizing: border-box;
+                border: 2px solid #000;
+                margin-bottom: 0;
+                page-break-after: always;
+                font-family: Arial, sans-serif;
+                font-size: 14px;
+                overflow: hidden;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: 1fr 1fr 1fr 1fr 2fr;
+            }
+            .sscc-cell {
+                border: 0.5px solid #000;
+                padding: 5px;
+                display: 1;
+                flex-direction: column;
+                justify-content: left;
+                align-items: left;
+                text-align: left;
+            }
+            .sscc-full { grid-column: 1 / -1; }
+            .sscc-cell strong { font-size: 12px; color: #000; margin-bottom: 5px; text-transform: uppercase; }
+            .sscc-cell span { font-weight: normal; font-size: 16px; word-break: break-word; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Phần điều khiển trên màn hình -->
+    <div class="container screen-only">
+        <a href="/" class="btn-back">← Quay lại Menu</a>
+        <h2>In Tem & Thống Kê Pallet</h2>
+
+        <div class="controls">
+            <div class="form-group">
+                <label for="jobType">Chọn Job Type</label>
+                <select id="jobType">
+                    {% for type in job_types %}
+                    <option value="{{ type }}">{{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="btn-action" onclick="loadData()">Tải Dữ Liệu</button>
+        </div>
+
+        <div id="stats" style="margin-bottom: 15px; font-weight: bold; color: #333;">
+            Tổng số Pallet: <span id="totalPallets">0</span> | Tổng SSCC: <span id="totalSSCC">0</span>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Pallet No</th>
+                    <th>Loại Pallet</th>
+                    <th>SKU</th>
+                    <th>Số lượng (SSCC)</th>
+                    <th>Trọng lượng (Ước tính)</th>
+                    <th>Ghi chú</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="7">Vui lòng chọn Job và tải dữ liệu</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Khu vực mẫu in (Sẽ được điền dữ liệu bằng JS) -->
+    <div id="printArea">
+        <!-- Nội dung tem sẽ được render vào đây -->
+    </div>
+
+    <script>
+        // Cấu hình trọng lượng vỏ Pallet
+        const PALLET_WEIGHTS = {
+            '1.2': 15.5,
+            '1.6': 20.5,
+            '1.9': 22.0,
+            'loose': 0
+        };
+
+        // Giả lập Masterdata SKU (Trong thực tế API nên trả về weight của từng item)
+        // Nếu API trả về sku_weight thì dùng của API, nếu không thì tra bảng này
+        const SKU_MASTERDATA = {
+            // 'SKU_CODE': weight_per_carton_kg
+            // Ví dụ:
+            // 'ABC-123': 5.5, 
+        };
+
+        let currentData = [];
+
+        function loadData() {
+            const jobType = document.getElementById('jobType').value;
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '<tr><td colspan="7">Đang tải...</td></tr>';
+
+            // Gọi API lấy dữ liệu in
+            // API cần trả về danh sách các item đã scan, bao gồm:
+            // pallet_no, pallet_type, sku, qty (số sscc), tag_label, sku_weight (nếu có)
+            fetch('/api/get_print_data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    processData(data.items);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="7" style="color:red">Lỗi: ${data.message}</td></tr>`;
+                }
+            })
+            .catch(e => {
+                tbody.innerHTML = `<tr><td colspan="7" style="color:red">Lỗi kết nối: ${e}</td></tr>`;
+            });
+        }
+
+        function processData(items) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            // Nhóm dữ liệu theo Pallet No
+            const pallets = {};
+            let totalSSCC = 0;
+
+            items.forEach(item => {
+                // Chỉ lấy pallet <> null (đã được lọc ở backend hoặc lọc tại đây)
+                if (!item.pallet_no) return;
+
+                if (!pallets[item.pallet_no]) {
+                    pallets[item.pallet_no] = {
+                        pallet_no: item.pallet_no,
+                        pallet_type: item.pallet_type || 'loose',
+                        skus: [],
+                        total_qty: 0,
+                        tag_label: item.tag_label || '',
+                        gross_weight: 0
+                    };
+                }
+
+                // Tính trọng lượng hàng
+                // Ưu tiên lấy weight từ API trả về, nếu không có thì tra masterdata, mặc định là 0
+                const unitWeight = item.sku_weight || SKU_MASTERDATA[item.sku] || 0;
+                const totalItemWeight = unitWeight * item.qty;
+
+                pallets[item.pallet_no].skus.push({
+                    sku: item.sku,
+                    qty: item.qty,
+                    weight: totalItemWeight,
+                    tag_label: item.tag_label
+                });
+
+                pallets[item.pallet_no].total_qty += item.qty;
+                pallets[item.pallet_no].gross_weight += totalItemWeight;
+                
+                // Cập nhật tag_label nếu có item nào trong pallet có note
+                if(item.tag_label) pallets[item.pallet_no].tag_label = item.tag_label;
+
+                totalSSCC += item.qty;
+            });
+
+            const palletKeys = Object.keys(pallets).sort();
+            document.getElementById('totalPallets').innerText = palletKeys.length;
+            document.getElementById('totalSSCC').innerText = totalSSCC;
+
+            if (palletKeys.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7">Không tìm thấy dữ liệu Pallet nào.</td></tr>';
+                return;
+            }
+
+            palletKeys.forEach(key => {
+                const p = pallets[key];
+                
+                // Cộng trọng lượng vỏ Pallet
+                const palletBaseWeight = PALLET_WEIGHTS[p.pallet_type] || 0;
+                const finalWeight = p.gross_weight + palletBaseWeight;
+
+                const skuList = p.skus.map(s => s.sku).join(', ');
+                const note = p.tag_label ? '<span style="color:red; font-weight:bold">TEM NHỎ</span>' : '';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${p.pallet_no}</strong></td>
+                    <td>${p.pallet_type} (${palletBaseWeight}kg)</td>
+                    <td>${skuList}</td>
+                    <td>${p.total_qty}</td>
+                    <td>${finalWeight.toFixed(2)} kg</td>
+                    <td>${note}</td>
+                    <td>
+                        <button class="btn-print" onclick='printLabel(${JSON.stringify(p)}, ${finalWeight.toFixed(2)})'>In Tem Pallet</button>
+                        <button class="btn-print" style="background-color: #17a2b8; margin-top: 5px;" onclick='printSSCC("${p.pallet_no}")'>In Tem SSCC</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function printLabel(palletData, finalWeight) {
+            const printArea = document.getElementById('printArea');
+            const jobType = document.getElementById('jobType').value;
+            
+            // Tạo timestamp yyyymmddhhmmss
+            const now = new Date();
+            const fmt = n => n.toString().padStart(2, '0');
+            const jobScan = `${now.getFullYear()}${fmt(now.getMonth() + 1)}${fmt(now.getDate())}${fmt(now.getHours())}${fmt(now.getMinutes())}${fmt(now.getSeconds())}`;
+
+            // Xử lý hiển thị SKU dạng bảng
+            let tableRows = '';
+            palletData.skus.forEach((s, index) => {
+                const note = s.tag_label ? s.tag_label : '';
+                tableRows += `
+                    <tr>
+                        <td style="border: 1px solid #000; padding: 5px; text-align: center;">${index + 1}</td>
+                        <td style="border: 1px solid #000; padding: 5px;">${s.sku}</td>
+                        <td style="border: 1px solid #000; padding: 5px; text-align: center;">${s.qty}</td>
+                        <td style="border: 1px solid #000; padding: 5px; text-align: center;">${note}</td>
+                    </tr>
+                `;
+            });
+
+            // Tạo nội dung HTML cho tem
+            printArea.innerHTML = `
+                <div class="label-box">
+                    <div class="label-header">
+                        PALLET ID: ${palletData.pallet_no}
+                    </div>
+                    
+                    <div class="label-row" style="justify-content: space-between;">
+                        <span><strong>Jobno:</strong> ${jobType}</span>
+                        <span><strong>JobScan:</strong> ${jobScan}</span>
+                        <span><strong>Loại pallet:</strong> ${palletData.pallet_type}</span>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 10px 0;"><svg id="barcode"></svg></div>
+                    
+                    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #000; font-size: 18px;">
+                        <thead>
+                            <tr style="background-color: #eee;">
+                                <th style="border: 1px solid #000; padding: 5px;">STT</th>
+                                <th style="border: 1px solid #000; padding: 5px;">SKU</th>
+                                <th style="border: 1px solid #000; padding: 5px;">Carton</th>
+                                <th style="border: 1px solid #000; padding: 5px;">Ghi chú</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                    
+                    <div class="label-row" style="font-size: 24px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px;">
+                        <span>Tổng Carton: ${palletData.total_qty}</span>
+                        <span>Tổng KG: ${finalWeight}</span>
+                    </div>
+                </div>
+            `;
+
+            // Tạo barcode từ số Pallet
+            JsBarcode("#barcode", jobScan, {
+                format: "CODE128",
+                width: 3,
+                height: 70,
+                displayValue: false
+            });
+
+            window.print();
+        }
+
+        function printSSCC(palletNo) {
+            const jobType = document.getElementById('jobType').value;
+            
+            fetch('/api/get_sscc_data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType, pallet_no: palletNo})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    const printArea = document.getElementById('printArea');
+                    printArea.innerHTML = '';
+                    
+                    data.items.forEach(item => {
+                        // Ưu tiên lấy sscc hoặc barcode hoặc id để tạo mã vạch
+                        const barcodeVal = item.sscc || item.barcode || item.id;
+                        const note = item.tag_label || '';
+                        
+                        printArea.innerHTML += `
+                            <div class="sscc-label">
+                                <div class="sscc-cell">
+                                    <strong>FROM</strong>
+                                    <span>KLN </span>
+                                </div>
+                                <div class="sscc-cell">
+                                    <strong>Pallet No</strong>
+                                    <span style="font-size: 24px;">${item.pallet || '-'}</span>
+                                </div>
+                                
+                                <div class="sscc-cell">
+                                    <strong>SKU</strong>
+                                    <span>${item.sku || '-'}</span>
+                                </div>
+                                <div class="sscc-cell">
+                                    <strong>Ngày quét</strong>
+                                    <span>${item.time_scan || '-'}</span>
+                                </div>
+                                
+                                <div class="sscc-cell sscc-full">
+                                    <strong>Loại Pallet / Ghi chú</strong>
+                                    <span>${item.pallet_type || '-'} ${note ? ' | ' + note : ''}</span>
+                                </div>
+                                
+                                <div class="sscc-cell sscc-full" style="background: #eee;">
+                                    <span style="font-size: 20px;">CHI TIẾT SSCC</span>
+                                </div>
+                                
+                                <div class="sscc-cell sscc-full">
+                                    <svg class="barcode-sscc" data-value="${barcodeVal}" data-format="CODE128" data-height="80" data-width="2" data-displayValue="true"></svg>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    // Khởi tạo barcode cho tất cả các tem SSCC
+                    JsBarcode(".barcode-sscc").init();
+                    
+                    window.print();
+                } else {
+                    alert('Lỗi: ' + data.message);
+                }
+            })
+            .catch(e => alert('Lỗi kết nối: ' + e));
+        }
+    </script>
+</body>
+</html>

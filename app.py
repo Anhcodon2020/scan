@@ -331,5 +331,93 @@ def manual_update():
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/print-label')
+def print_label_page():
+    # Lấy danh sách jobno_type để hiển thị dropdown
+    job_types = []
+    try:
+        result = db.session.execute(text("SELECT DISTINCT jobno_type FROM scanfile WHERE jobno_type IS NOT NULL"))
+        job_types = [row[0] for row in result]
+    except:
+        job_types = ['Normal', 'Urgent', 'Sample']
+    
+    return render_template('print_label.html', job_types=job_types)
+
+@app.route('/api/get_print_data', methods=['POST'])
+def get_print_data():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+
+    try:
+        # Query lấy dữ liệu: Group theo Pallet và SKU để tính tổng số lượng
+        # Giả định bảng masterdata có cột 'weight' (số kg/thùng)
+        # Giả định bảng scanfile có cột 'tag_label' (ghi chú tem)
+        query = text("""
+            SELECT 
+                s.pallet, 
+                s.pallet_type, 
+                s.sku, 
+                COUNT(s.id) as qty, 
+                MAX(s.tag_label) as tag_label,
+                MAX(m.weight) as sku_weight
+                            
+            FROM scanfile s
+            LEFT JOIN masterdata m ON s.sku = m.sku
+            WHERE s.jobno_type = :job_type 
+              AND s.pallet IS NOT NULL 
+              AND s.pallet != ''
+            GROUP BY s.pallet, s.pallet_type, s.sku
+            ORDER BY s.pallet, s.sku
+        """)
+        
+        result = db.session.execute(query, {'job_type': job_type})
+        
+        items = []
+        for row in result:
+            items.append({
+                'pallet_no': row[0],
+                'pallet_type': row[1],
+                'sku': row[2],
+                'qty': row[3],
+                # Lấy tag_label, nếu null thì trả về chuỗi rỗng
+                'tag_label': 'Tem nhỏ' if row[4] else '',
+                # Lấy weight, nếu null (không tìm thấy trong masterdata) thì trả về 0
+                'sku_weight': float(row[5]) if row[5] is not None else 0
+                # Lấy pallet_type, nếu null (không tìm thấy trong masterdata) thì trả về '
+                
+            })
+
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_sscc_data', methods=['POST'])
+def get_sscc_data():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+    pallet_no = data.get('pallet_no', '')
+
+    try:
+        # Lấy tất cả thông tin từ bảng scanfile cho job và pallet này
+        query = text("SELECT * FROM scanfile WHERE jobno_type = :job_type AND pallet = :pallet_no")
+        result = db.session.execute(query, {'job_type': job_type, 'pallet_no': pallet_no})
+        
+        items = []
+        keys = result.keys() # Lấy danh sách tên cột
+        
+        for row in result:
+            item = {}
+            for key, val in zip(keys, row):
+                # Xử lý định dạng ngày tháng nếu có để tránh lỗi JSON
+                if isinstance(val, datetime):
+                    item[key] = val.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    item[key] = val
+            items.append(item)
+
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 if __name__ == '__main__':
     app.run(debug=True)
