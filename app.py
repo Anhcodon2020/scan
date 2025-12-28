@@ -3,7 +3,7 @@ import ssl
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 
 app = Flask(__name__)
 
@@ -322,8 +322,10 @@ def manual_update():
              return jsonify({'success': False, 'message': f'Không đủ số lượng khả dụng (Tìm thấy {len(ids)})'})
 
         # Cập nhật pallet, pallet_type và thời gian
+        # Sử dụng bindparam với expanding=True để xử lý danh sách ID an toàn cho mệnh đề IN
         update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type, time_scan = :time_scan WHERE id IN :ids")
-        db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'time_scan': datetime.now(), 'ids': tuple(ids)})
+        update_query = update_query.bindparams(bindparam('ids', expanding=True))
+        db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'time_scan': datetime.now(), 'ids': list(ids)})
         db.session.commit()
 
         return jsonify({'success': True, 'message': f'Đã cập nhật {len(ids)} thùng vào Pallet {pallet_no}'})
