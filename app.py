@@ -35,23 +35,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = os.environ.get('SECRET_KEY', 'kln_secret_key_change_me') # Key bảo mật cho session
 db = SQLAlchemy(app)
 
-# --- TỰ ĐỘNG TẠO BẢNG LOGS NẾU CHƯA CÓ (Dùng Raw SQL để tương thích) ---
-with app.app_context():
-    try:
-        # Kiểm tra và tạo bảng logs đơn giản
-        db.session.execute(text("""
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username VARCHAR(255),
-                action VARCHAR(255),
-                message TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                is_read BOOLEAN DEFAULT 0
-            )
-        """))
-        db.session.commit()
-    except Exception as e:
-        print(f"Lỗi khởi tạo bảng logs (có thể bỏ qua nếu dùng DB khác SQLite): {e}")
+
 
 # --- DECORATOR KIỂM TRA ĐĂNG NHẬP ---
 def login_required(f):
@@ -110,8 +94,9 @@ def logout():
 @login_required
 def home():
     # Điều hướng thông minh nếu không phải admin
-    if session.get('role') == 'scanner':
-        return redirect(url_for('scan_page'))
+    # Bỏ redirect scanner để họ có thể thấy menu chọn chức năng (Scan hoặc In Tem Nhỏ)
+    # if session.get('role') == 'scanner':
+    #    return redirect(url_for('scan_page'))
     if session.get('role') == 'printer':
         return redirect(url_for('print_label_page'))
     # Render trang home.html
@@ -669,6 +654,45 @@ def mark_read():
         db.session.execute(text("UPDATE logs SET is_read = 1 WHERE id = :id"), {'id': log_id})
         db.session.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/print-small-label')
+@login_required
+@role_required(['admin', 'printer', 'scanner'])
+def print_small_label_page():
+    # Lấy danh sách jobno_type
+    job_types = []
+    try:
+        result = db.session.execute(text("SELECT DISTINCT jobno_type FROM scanfile WHERE jobno_type IS NOT NULL"))
+        job_types = [row[0] for row in result]
+    except:
+        job_types = ['Normal', 'Urgent', 'Sample']
+    return render_template('print_small_label.html', job_types=job_types)
+
+@app.route('/api/get_small_label_data', methods=['POST'])
+def get_small_label_data():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+    try:
+        # Lấy danh sách các item có tag_label, group theo Pallet, SKU và Tag
+        query = text("""
+            SELECT 
+                s.pallet, 
+                s.sku, 
+                s.tag_label,
+                COUNT(s.id) as qty,
+                s.jobscan
+            FROM scanfile s
+            WHERE s.jobno_type = :job_type 
+              AND s.tag_label IS NOT NULL 
+              AND s.tag_label != ''
+            GROUP BY s.pallet, s.sku, s.tag_label, s.jobscan
+            ORDER BY s.pallet, s.sku
+        """)
+        result = db.session.execute(query, {'job_type': job_type})
+        items = [{'pallet': row[0], 'sku': row[1], 'tag_label': row[2], 'qty': row[3], 'jobscan': row[4]} for row in result]
+        return jsonify({'success': True, 'items': items})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

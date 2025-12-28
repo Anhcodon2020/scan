@@ -434,6 +434,9 @@
                     printArea.innerHTML = '';
                     
                     data.items.forEach(item => {
+                        // Chỉ in những tem có tag_label = null (hoặc rỗng)
+                        if (item.tag_label) return;
+
                         // Ưu tiên lấy sscc hoặc barcode hoặc id để tạo mã vạch
                         const barcodeVal = item.sscc || item.barcode || item.id;
                         const note = item.tag_label || '';

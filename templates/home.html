@@ -60,11 +60,16 @@
         </div>
 
         <div class="menu">
+            {% if session.get('role') in ['admin', 'scanner'] %}
             <a href="/scan">Scan Hàng</a>
+            {% endif %}
             <a href="/">Trang Chủ</a>
+            {% if session.get('role') in ['admin', 'printer'] %}
             <a href="/add-product">Tạo nhãn thủ công</a>
             <a href="/statistics">Thống Kê</a>
             <a href="/print-label">In Tem</a>
+            {% endif %}
+            <a href="/print-small-label" style="background-color: #17a2b8; color: white; border: none;">In Tem Nhỏ (Tag)</a>
             {% if session.get('role') == 'admin' %}
             <a href="/users" style="background-color: #6f42c1; color: white; border: none;">Quản lý người dùng</a>
             {% endif %}

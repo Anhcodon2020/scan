@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Tem Nhỏ (Tag)</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn-back { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #666; font-size: 16px; }
+        
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; }
+        .form-group { flex: 1; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group select, .btn-action { padding: 10px; width: 100%; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .btn-action { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; width: auto; min-width: 120px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #f8f9fa; }
+        .btn-print { background-color: #17a2b8; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        
+        /* Style in ấn */
+        #printArea { display: none; }
+        @media print {
+            @page { size: 100mm 30mm; margin: 0; }
+            body * { visibility: hidden; }
+            #printArea, #printArea * { visibility: visible; }
+            #printArea { display: block; position: absolute; left: 0; top: 0; width: 100%; }
+            
+            .sscc-label {
+                width: 100mm; height: 30mm; box-sizing: border-box; border: none;
+                page-break-after: always; font-family: Arial, sans-serif; font-size: 14px;
+                display: flex; flex-direction: column; justify-content: space-between; padding: 2px;
+            }
+            .sscc-cell { border: 0.5px solid #000; padding: 5px; display: flex; flex-direction: column; }
+            .sscc-full { grid-column: 1 / -1; }
+            .sscc-cell strong { font-size: 12px; text-transform: uppercase; margin-bottom: 5px; }
+            .sscc-cell span { font-size: 16px; font-weight: bold; }
+            
+            .sku-qty-grid { display: grid; grid-template-columns: 1fr auto; column-gap: 10px;align-items: left;justify-content: left;}
+            .sku-label { font-size: 15px; font-weight: bold;
+            .sku-value { font-size: 20px; font-weight: bold; }
+            .qty-value { font-size: 20px; font-weight:normal; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container screen-only">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <a href="/" class="btn-back" style="margin-bottom: 0;">← Quay lại Menu</a>
+            <div style="display: flex; align-items: center;">
+                <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="margin-bottom: 0; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+            </div>
+        </div>
+        
+        <h2>Thống Kê & In Tem Nhỏ (Tag)</h2>
+
+        <div class="controls">
+            <div class="form-group">
+                <label for="jobType">Chọn Job Type</label>
+                <select id="jobType">
+                    {% for type in job_types %}
+                    <option value="{{ type }}">{{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="btn-action" onclick="loadData()">Tải Dữ Liệu</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Pallet</th>
+                    <th>SKU</th>
+                    <th>Tag Label</th>
+                    <th>Số lượng</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="5">Vui lòng chọn Job và tải dữ liệu</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="printArea"></div>
+
+    <script>
+        function loadData() {
+            const jobType = document.getElementById('jobType').value;
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '<tr><td colspan="5">Đang tải...</td></tr>';
+
+            fetch('/api/get_small_label_data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    tbody.innerHTML = '';
+                    if(data.items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5">Không tìm thấy tem nào có Tag Label.</td></tr>';
+                        return;
+                    }
+                    data.items.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${item.pallet}</strong></td>
+                            <td>${item.sku}</td>
+                            <td style="color:red; font-weight:bold;">${item.tag_label}</td>
+                            <td>${item.qty}</td>
+                            <td>
+                                <button class="btn-print" onclick='printTagLabel("${item.pallet}", "${item.sku}", "${item.tag_label}")'>In Tem</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5" style="color:red">Lỗi: ${data.message}</td></tr>`;
+                }
+            })
+            .catch(e => tbody.innerHTML = `<tr><td colspan="5" style="color:red">Lỗi kết nối: ${e}</td></tr>`);
+        }
+
+        function printTagLabel(palletNo, sku, tagLabel) {
+            const jobType = document.getElementById('jobType').value;
+            
+            // Lấy chi tiết các item trong pallet để in (lọc theo SKU và Tag)
+            fetch('/api/get_sscc_data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: jobType, pallet_no: palletNo})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    const printArea = document.getElementById('printArea');
+                    printArea.innerHTML = '';
+                    let count = 0;
+
+                    data.items.forEach(item => {
+                        // Chỉ in những item khớp SKU và Tag Label
+                        if (item.sku !== sku || item.tag_label !== tagLabel) return;
+                        count++;
+
+                        const barcodeVal = item.sscc || item.barcode || item.id;
+                        
+                        printArea.innerHTML += `
+                            <div class="sscc-label">
+                                <div style="display: flex; justify-content: space-between; width: 100%; border-bottom: 1px solid #000; padding-bottom: 2px;">
+                                    <span style="font-size: 10px; font-weight: bold;">SSCC:</span>
+                                    <span style="font-size: 10px; font-weight: bold;">PO # ${item.master_delivery}</span>
+                                    <span style="font-size: 10px; font-weight: bold;">SKU: ${item.sku}</span>
+                                    <span style="font-size: 10px; font-weight: bold;">Quantity: ${item.qty}</span>
+                                </div>
+                                
+                                <div style="display: flex; justify-content: center; align-items: center; flex-grow: 1;">
+                                     <svg class="barcode-sscc" data-value="${item.sscc}" data-format="CODE128" data-height="60" data-width="2.5" data-displayValue="false"></svg>
+                                  </div>
+                                  <div style="font-size: 10px; font-weight: bold; text-align: left;">${item.sscc}</div>
+                                 
+                            </div>
+                        `;
+                    });
+
+                    if (count === 0) {
+                        alert("Không tìm thấy dữ liệu chi tiết để in.");
+                        return;
+                    }
+                    
+                    JsBarcode(".barcode-sscc").init();
+                    window.print();
+                } else {
+                    alert('Lỗi: ' + data.message);
+                }
+            })
+            .catch(e => alert('Lỗi kết nối: ' + e));
+        }
+    </script>
+</body>
+</html>
