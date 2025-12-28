@@ -4,9 +4,9 @@ from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, bindparam
-
+from config import Config
 app = Flask(__name__)
-
+app.config.from_object(Config)
 # Cấu hình Database
 # Lấy URL từ biến môi trường DATABASE_URL, nếu không có thì dùng SQLite local để test
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///local.db')
