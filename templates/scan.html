@@ -468,7 +468,14 @@
                             cameraSelect.appendChild(option);
                         });
 
-                        const cameraId = devices[0].id;
+                        // Mặc định ưu tiên tìm camera sau (back/environment)
+                        let cameraId = devices[0].id;
+                        const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('sau') || d.label.toLowerCase().includes('environment'));
+                        if (backCamera) {
+                            cameraId = backCamera.id;
+                        }
+                        
+                        cameraSelect.value = cameraId; // Cập nhật dropdown hiển thị đúng camera đang chọn
                         startCamera(cameraId);
                         
                         // Sự kiện đổi camera
