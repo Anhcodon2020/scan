@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Hàng</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -78,8 +79,13 @@
             </select>
         </div>
 
+        <button id="btnToggleScan" style="margin-bottom: 15px; width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">Bắt đầu Scan</button>
+
+        <button id="btnCamera" style="display:none; margin-bottom: 15px; width: 100%; padding: 12px; background-color: #17a2b8; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">📷 Scan bằng Camera</button>
+        <div id="reader" style="width: 100%; margin-bottom: 15px;"></div>
+
         <!-- autocomplete="off" để tránh bàn phím ảo che khuất hoặc gợi ý cũ -->
-        <input type="text" id="barcodeInput" placeholder="Quét mã vạch..."  autocomplete="off">
+        <input type="text" id="barcodeInput" placeholder="Nhấn 'Bắt đầu Scan' để nhập..."  autocomplete="off" disabled style="background-color: #e9ecef;">
         
         <div id="status" style="margin-bottom: 10px; font-size: 18px;">
             <div style="font-size: 0.9em; color: #333; margin-bottom: 5px; background: #eee; padding: 5px; border-radius: 4px;">
@@ -137,6 +143,9 @@
         const jobTypeSelect = document.getElementById('jobType');
         const palletSelect = document.getElementById('palletNo');
         const palletDetailsDiv = document.getElementById('palletDetails');
+        const palletTypeSelect = document.getElementById('palletType');
+        const btnToggleScan = document.getElementById('btnToggleScan');
+        const btnCamera = document.getElementById('btnCamera');
         
         // Modal Logic
         const modal = document.getElementById('skuModal');
@@ -314,7 +323,7 @@
         jobTypeSelect.addEventListener('change', () => {
             fetchJobStats();
             fetchHistory();
-            fetchPalletDetails();
+            fetchPallets();
         });
         palletSelect.addEventListener('change', fetchPalletDetails);
         
@@ -322,12 +331,133 @@
         fetchHistory();
         fetchPalletDetails(); // Gọi lần đầu khi load trang
 
+        let isScanning = false;
+        let html5QrcodeScanner = null;
+        
+        // Cấu hình âm thanh (Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSuccessSound() {
+            // Beep cao (Success)
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // 1200Hz
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            oscillator.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.15);
+            oscillator.stop(audioCtx.currentTime + 0.15);
+        }
+
+        function playErrorSound() {
+            // Beep trầm (Error)
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(150, audioCtx.currentTime); // 150Hz
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            oscillator.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.3);
+            oscillator.stop(audioCtx.currentTime + 0.3);
+        }
+
+        btnToggleScan.addEventListener('click', () => {
+            // Kích hoạt AudioContext khi người dùng tương tác lần đầu
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            if (!isScanning) {
+                // Bắt đầu scan
+                if (!palletSelect.value) {
+                    alert("Vui lòng chọn Số Pallet trước khi bắt đầu!");
+                    return;
+                }
+                
+                isScanning = true;
+                
+                // Disable controls
+                jobTypeSelect.disabled = true;
+                palletSelect.disabled = true;
+                palletTypeSelect.disabled = true;
+                
+                // Enable input
+                input.disabled = false;
+                input.style.backgroundColor = "white";
+                input.placeholder = "Quét mã vạch...";
+                input.focus();
+                
+                // Update button
+                btnToggleScan.innerText = "Dừng / Đổi Pallet";
+                btnToggleScan.style.backgroundColor = "#dc3545"; // Red
+                btnCamera.style.display = "block"; // Hiện nút camera
+            } else {
+                // Dừng scan
+                isScanning = false;
+                
+                // Enable controls
+                jobTypeSelect.disabled = false;
+                palletSelect.disabled = false;
+                palletTypeSelect.disabled = false;
+                
+                // Disable input
+                input.disabled = true;
+                input.style.backgroundColor = "#e9ecef";
+                input.placeholder = "Nhấn 'Bắt đầu Scan' để nhập...";
+                
+                // Update button
+                btnToggleScan.innerText = "Bắt đầu Scan";
+                btnToggleScan.style.backgroundColor = "#007bff"; // Blue
+                btnCamera.style.display = "none"; // Ẩn nút camera
+                
+                // Tắt camera nếu đang mở
+                if (html5QrcodeScanner) {
+                    html5QrcodeScanner.clear();
+                    html5QrcodeScanner = null;
+                    document.getElementById('reader').style.display = "none";
+                    btnCamera.innerText = "📷 Scan bằng Camera";
+                }
+            }
+        });
+
+        // Xử lý nút Camera
+        btnCamera.addEventListener('click', () => {
+            const readerDiv = document.getElementById('reader');
+            if (html5QrcodeScanner) {
+                // Đang bật -> Tắt
+                html5QrcodeScanner.clear();
+                html5QrcodeScanner = null;
+                readerDiv.style.display = "none";
+                btnCamera.innerText = "📷 Scan bằng Camera";
+            } else {
+                // Đang tắt -> Bật
+                readerDiv.style.display = "block";
+                html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+                html5QrcodeScanner.render((decodedText, decodedResult) => {
+                    // Success callback
+                    handleScan(decodedText);
+                    // Tạm dừng hoặc thông báo? Ở đây ta cứ để scan tiếp
+                }, (errorMessage) => {
+                    // Error callback (thường không cần xử lý để tránh spam log)
+                });
+                btnCamera.innerText = "❌ Tắt Camera";
+            }
+        });
+
         let scanCount = 0;
 
         // Giữ focus vào ô input bất kể click đi đâu (Chế độ Kiosk/Scanner)
         // Chỉ focus khi modal không mở
         document.addEventListener('click', (e) => {
-            if (modal.style.display !== "block" && e.target !== input && !e.target.closest('.modal-content')) {
+            if (isScanning && modal.style.display !== "block" && e.target !== input && !e.target.closest('.modal-content') && e.target !== btnToggleScan) {
                 input.focus();
             }
         });
@@ -357,62 +487,69 @@
         // Xử lý khi máy quét gửi phím Enter
         input.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
-                const code = this.value.trim();
-                const jobType = document.getElementById('jobType').value;
-                const palletNo = document.getElementById('palletNo').value;
-                const palletType = document.getElementById('palletType').value;
-                
-                // Cập nhật số pallet đang hiển thị
-                document.getElementById('lblPallet').innerText = palletNo;
-
-                if (code) {
-                    // Gửi dữ liệu lên server xử lý
-                    fetch('/api/scan', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ barcode: code, job_type: jobType, pallet_no: palletNo, pallet_type: palletType })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        const item = document.createElement('div');
-                        item.className = 'scan-item';
-                        
-                        if (data.success) {
-                            scanCount++;
-                            countSpan.innerText = scanCount;
-                            
-                            // Cập nhật tổng số lượng pallet từ server trả về
-                            if (data.pallet_count !== undefined) {
-                                document.getElementById('palletTotal').innerText = data.pallet_count;
-                            }
-                            
-                            // Cập nhật thống kê Job
-                            if (data.total_sscc !== undefined) {
-                                jobTotalSpan.innerText = data.total_sscc;
-                                jobScannedSpan.innerText = data.scanned_sscc;
-                                jobRemainSpan.innerText = data.remain_sscc;
-                                updateProgressBar(data.total_sscc, data.scanned_sscc);
-                            }
-                            
-                            // Cập nhật lại bảng lịch sử
-                            fetchHistory();
-                            fetchPalletDetails(); // Cập nhật lại chi tiết pallet vừa quét
-
-                            item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
-                            item.style.backgroundColor = '#d4edda';
-                        } else {
-                            item.innerHTML = `<span>${code}</span> <span style="color:red; font-weight:bold">${data.message}</span>`;
-                            item.style.backgroundColor = '#f8d7da';
-                        }
-                        list.prepend(item);
-                    })
-                    .catch(err => alert('Lỗi kết nối server!'));
-
-                    // Xóa ô nhập để quét mã tiếp theo
-                    this.value = '';
-                }
+                handleScan(this.value.trim());
+                this.value = '';
             }
         });
+
+        // Hàm xử lý scan chung (cho cả Input và Camera)
+        function handleScan(code) {
+            const jobType = document.getElementById('jobType').value;
+            const palletNo = document.getElementById('palletNo').value;
+            const palletType = document.getElementById('palletType').value;
+            
+            // Cập nhật số pallet đang hiển thị
+            document.getElementById('lblPallet').innerText = palletNo;
+
+            if (code) {
+                // Gửi dữ liệu lên server xử lý
+                fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode: code, job_type: jobType, pallet_no: palletNo, pallet_type: palletType })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const item = document.createElement('div');
+                    item.className = 'scan-item';
+                    
+                    if (data.success) {
+                        playSuccessSound();
+                        scanCount++;
+                        countSpan.innerText = scanCount;
+                        
+                        // Cập nhật tổng số lượng pallet từ server trả về
+                        if (data.pallet_count !== undefined) {
+                            document.getElementById('palletTotal').innerText = data.pallet_count;
+                        }
+                        
+                        // Cập nhật thống kê Job
+                        if (data.total_sscc !== undefined) {
+                            jobTotalSpan.innerText = data.total_sscc;
+                            jobScannedSpan.innerText = data.scanned_sscc;
+                            jobRemainSpan.innerText = data.remain_sscc;
+                            updateProgressBar(data.total_sscc, data.scanned_sscc);
+                        }
+                        
+                        // Cập nhật lại bảng lịch sử
+                        fetchHistory();
+                        fetchPalletDetails(); // Cập nhật lại chi tiết pallet vừa quét
+
+                        item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
+                        item.style.backgroundColor = '#d4edda';
+                    } else {
+                        playErrorSound();
+                        item.innerHTML = `<span>${code}</span> <span style="color:red; font-weight:bold">${data.message}</span>`;
+                        item.style.backgroundColor = '#f8d7da';
+                    }
+                    list.prepend(item);
+                })
+                .catch(err => {
+                    playErrorSound();
+                    alert('Lỗi kết nối server!');
+                });
+            }
+        }
     </script>
 </body>
 </html>
