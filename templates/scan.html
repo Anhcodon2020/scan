@@ -82,6 +82,7 @@
         <button id="btnToggleScan" style="margin-bottom: 15px; width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">Bắt đầu Scan</button>
 
         <button id="btnCamera" style="display:none; margin-bottom: 15px; width: 100%; padding: 12px; background-color: #17a2b8; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">📷 Scan bằng Camera</button>
+        <select id="cameraSelect" style="display:none; width: 100%; padding: 10px; margin-bottom: 15px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px;"></select>
         <div id="reader" style="width: 100%; margin-bottom: 15px;"></div>
 
         <!-- autocomplete="off" để tránh bàn phím ảo che khuất hoặc gợi ý cũ -->
@@ -146,6 +147,7 @@
         const palletTypeSelect = document.getElementById('palletType');
         const btnToggleScan = document.getElementById('btnToggleScan');
         const btnCamera = document.getElementById('btnCamera');
+        const cameraSelect = document.getElementById('cameraSelect');
         
         // Modal Logic
         const modal = document.getElementById('skuModal');
@@ -332,6 +334,7 @@
         fetchPalletDetails(); // Gọi lần đầu khi load trang
 
         let isScanning = false;
+        let isProcessing = false;
         let html5QrcodeScanner = null;
         
         // Cấu hình âm thanh (Web Audio API)
@@ -354,6 +357,11 @@
         }
 
         function playErrorSound() {
+            // Rung điện thoại nếu hỗ trợ (Vibration API)
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]); // Rung 200ms, nghỉ 100ms, rung tiếp 200ms
+            }
+
             // Beep trầm (Error)
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const oscillator = audioCtx.createOscillator();
@@ -420,9 +428,12 @@
                 
                 // Tắt camera nếu đang mở
                 if (html5QrcodeScanner) {
-                    html5QrcodeScanner.clear();
-                    html5QrcodeScanner = null;
+                    html5QrcodeScanner.stop().then(() => {
+                        html5QrcodeScanner.clear();
+                        html5QrcodeScanner = null;
+                    }).catch(err => console.log(err));
                     document.getElementById('reader').style.display = "none";
+                    cameraSelect.style.display = "none";
                     btnCamera.innerText = "📷 Scan bằng Camera";
                 }
             }
@@ -433,24 +444,66 @@
             const readerDiv = document.getElementById('reader');
             if (html5QrcodeScanner) {
                 // Đang bật -> Tắt
-                html5QrcodeScanner.clear();
-                html5QrcodeScanner = null;
-                readerDiv.style.display = "none";
-                btnCamera.innerText = "📷 Scan bằng Camera";
+                html5QrcodeScanner.stop().then(() => {
+                    html5QrcodeScanner.clear();
+                    html5QrcodeScanner = null;
+                    readerDiv.style.display = "none";
+                    cameraSelect.style.display = "none";
+                    btnCamera.innerText = "📷 Scan bằng Camera";
+                }).catch(err => console.log(err));
             } else {
                 // Đang tắt -> Bật
                 readerDiv.style.display = "block";
-                html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-                html5QrcodeScanner.render((decodedText, decodedResult) => {
-                    // Success callback
-                    handleScan(decodedText);
-                    // Tạm dừng hoặc thông báo? Ở đây ta cứ để scan tiếp
-                }, (errorMessage) => {
-                    // Error callback (thường không cần xử lý để tránh spam log)
+                
+                // Lấy danh sách camera
+                Html5Qrcode.getCameras().then(devices => {
+                    if (devices && devices.length) {
+                        cameraSelect.innerHTML = '';
+                        cameraSelect.style.display = 'block';
+                        
+                        devices.forEach(device => {
+                            const option = document.createElement('option');
+                            option.value = device.id;
+                            option.text = device.label || `Camera ${cameraSelect.options.length + 1}`;
+                            cameraSelect.appendChild(option);
+                        });
+
+                        const cameraId = devices[0].id;
+                        startCamera(cameraId);
+                        
+                        // Sự kiện đổi camera
+                        cameraSelect.onchange = () => {
+                            if(html5QrcodeScanner) {
+                                html5QrcodeScanner.stop().then(() => {
+                                    startCamera(cameraSelect.value);
+                                });
+                            }
+                        };
+                        btnCamera.innerText = "❌ Tắt Camera";
+                    } else {
+                        alert("Không tìm thấy camera nào!");
+                    }
+                }).catch(err => {
+                    alert("Lỗi truy cập camera: " + err);
                 });
-                btnCamera.innerText = "❌ Tắt Camera";
             }
         });
+
+        function startCamera(cameraId) {
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                cameraId, 
+                { fps: 10, qrbox: 250 },
+                (decodedText, decodedResult) => {
+                    handleScan(decodedText);
+                },
+                (errorMessage) => {
+                    // ignore
+                }
+            ).catch(err => {
+                console.log("Start failed", err);
+            });
+        }
 
         let scanCount = 0;
 
@@ -494,6 +547,8 @@
 
         // Hàm xử lý scan chung (cho cả Input và Camera)
         function handleScan(code) {
+            if (isProcessing) return; // Ngăn chặn quét liên tục (Debounce/Lock)
+
             const jobType = document.getElementById('jobType').value;
             const palletNo = document.getElementById('palletNo').value;
             const palletType = document.getElementById('palletType').value;
@@ -502,6 +557,8 @@
             document.getElementById('lblPallet').innerText = palletNo;
 
             if (code) {
+                isProcessing = true; // Khóa lại
+
                 // Gửi dữ liệu lên server xử lý
                 fetch('/api/scan', {
                     method: 'POST',
@@ -547,6 +604,10 @@
                 .catch(err => {
                     playErrorSound();
                     alert('Lỗi kết nối server!');
+                })
+                .finally(() => {
+                    // Mở khóa sau 500ms để tránh double scan
+                    setTimeout(() => { isProcessing = false; }, 500);
                 });
             }
         }
