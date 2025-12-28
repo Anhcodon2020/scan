@@ -51,32 +51,40 @@
     <div class="container">
         <a href="/" class="btn-back">← Quay lại Menu</a>
         
-        <div class="form-group">
-            <label for="jobType">Job No Type</label>
-            <select id="jobType">
-                {% for type in job_types %}
-                <option value="{{ type }}">{{ type }}</option>
-                {% endfor %}
-            </select>
+        <div id="selectionForm">
+            <div class="form-group">
+                <label for="jobType">Job No Type</label>
+                <select id="jobType">
+                    {% for type in job_types %}
+                    <option value="{{ type }}">{{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="palletType">Loại Pallet</label>
+                <select id="palletType">
+                    <option value="1.2">1.2m</option>
+                    <option value="1.6">1.6m</option>
+                    <option value="1.9">1.9m</option>
+                    <option value="loose">Loose Carton</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="palletNo">Số Pallet</label>
+                <select id="palletNo">
+                    {% for p in available_pallets %}
+                    <option value="{{ p.no }}">{{ p.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label for="palletType">Loại Pallet</label>
-            <select id="palletType">
-                <option value="1.2">1.2m</option>
-                <option value="1.6">1.6m</option>
-                <option value="1.9">1.9m</option>
-                <option value="loose">Loose Carton</option>
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label for="palletNo">Số Pallet</label>
-            <select id="palletNo">
-                {% for i in available_pallets %}
-                <option value="{{ i }}">{{ i }}</option>
-                {% endfor %}
-            </select>
+        <!-- Header hiển thị thông tin khi đang scan (ẩn form chọn) -->
+        <div id="scanHeader" style="display:none; margin-bottom: 15px; padding: 10px; background: #e8f0fe; border-radius: 5px; border: 1px solid #b8daff; color: #333;">
+            <div><strong>Job:</strong> <span id="lblJobTypeDisplay"></span></div>
+            <div style="margin-top:5px;"><strong>Pallet:</strong> <span id="lblPalletDisplay" style="font-size:1.2em; color:#007bff; font-weight:bold;"></span> (<span id="lblPalletTypeDisplay"></span>)</div>
         </div>
 
         <button id="btnToggleScan" style="margin-bottom: 15px; width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">Bắt đầu Scan</button>
@@ -93,13 +101,14 @@
                 Job: <span id="jobTotal" style="font-weight:bold">0</span> | 
                 Đã xong: <span id="jobScanned" style="font-weight:bold; color:green">0</span> |
                 Còn lại: <span id="jobRemain" style="font-weight:bold; color:red">0</span>
+                <a href="javascript:void(0)" onclick="showRemainSkus()" style="margin-left: 5px; color: #007bff; text-decoration: none; font-weight: bold;">(Xem)</a>
                 <div style="width: 100%; background-color: #ccc; border-radius: 4px; margin-top: 5px; height: 15px; overflow: hidden;">
                     <div id="progressBar" style="width: 0%; height: 100%; background-color: #28a745; text-align: center; line-height: 15px; color: white; font-size: 10px; transition: width 0.3s;">0%</div>
                 </div>
             </div>
             Đã scan : <span id="count">0</span><br>
             <strong>Tổng Pallet <span id="lblPallet"></span>: <span id="palletTotal" style="color: #007bff; font-size: 1.2em;">0</span></strong>
-            <div id="palletDetails" style="font-size: 0.9em; color: #555; margin-top: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #007bff; display: none;"></div>
+            <div id="palletDetails" style="font-size: 0.9em; color: #555; margin-top: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #007bff; display: none; max-height: 200px; overflow-y: auto;"></div>
         </div>
         <div class="scan-list" id="scanList">
             <!-- Kết quả quét sẽ hiện ở đây -->
@@ -148,6 +157,8 @@
         const btnToggleScan = document.getElementById('btnToggleScan');
         const btnCamera = document.getElementById('btnCamera');
         const cameraSelect = document.getElementById('cameraSelect');
+        const selectionForm = document.getElementById('selectionForm');
+        const scanHeader = document.getElementById('scanHeader');
         
         // Modal Logic
         const modal = document.getElementById('skuModal');
@@ -190,6 +201,37 @@
             .catch(e => document.getElementById('modalBody').innerText = 'Lỗi: ' + e);
         }
 
+        function showRemainSkus() {
+            const type = jobTypeSelect.value;
+            document.getElementById('modalTitle').innerText = 'Danh sách chưa Scan';
+            document.getElementById('modalBody').innerHTML = 'Đang tải...';
+            modal.style.display = "block";
+
+            fetch('/api/get_remain_skus', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    if (data.items.length === 0) {
+                        document.getElementById('modalBody').innerHTML = '<p style="text-align:center; color:green; font-weight:bold;">Đã hoàn thành scan cho Job này!</p>';
+                        return;
+                    }
+                    let html = '<table class="modal-table"><thead><tr><th>SKU</th><th>Còn lại</th></tr></thead><tbody>';
+                    data.items.forEach(item => {
+                        html += `<tr><td>${item.sku}</td><td style="text-align:center; font-weight:bold;">${item.qty}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('modalBody').innerHTML = html;
+                } else {
+                    document.getElementById('modalBody').innerText = 'Lỗi: ' + data.message;
+                }
+            })
+            .catch(e => document.getElementById('modalBody').innerText = 'Lỗi: ' + e);
+        }
+
         // Hàm cập nhật thanh tiến trình
         function updateProgressBar(total, scanned) {
             let percent = 0;
@@ -221,7 +263,8 @@
         }
 
         // Hàm lấy chi tiết Pallet hiện tại
-        function fetchPalletDetails() {
+        function fetchPalletDetails(arg) {
+            const highlightSku = (typeof arg === 'string') ? arg : null;
             const type = jobTypeSelect.value;
             const pallet = palletSelect.value;
             
@@ -244,8 +287,28 @@
                     document.getElementById('palletTotal').innerText = data.pallet_count;
                     
                     // Hiển thị danh sách SKU
-                    const skuHtml = data.skus.length > 0 ? data.skus.map(s => `${s.sku}: <b>${s.qty}</b>`).join(', ') : 'Chưa có hàng';
-                    palletDetailsDiv.innerHTML = `Chi tiết: ${skuHtml}`;
+                    if (data.skus.length > 0) {
+                        let tableHtml = '<table style="width:100%; border-collapse: collapse; margin-top:5px; background:white;">';
+                        tableHtml += '<tr style="background:#eee;"><th style="border:1px solid #ddd; padding:8px; text-align:left;">SKU</th><th style="border:1px solid #ddd; padding:8px; text-align:center;">SL</th></tr>';
+                        data.skus.forEach(s => {
+                            const isHighlight = highlightSku && s.sku === highlightSku;
+                            const bgStyle = isHighlight ? 'background-color: #d4edda;' : '';
+                            const rowId = isHighlight ? 'id="highlightRow"' : '';
+                            tableHtml += `<tr ${rowId} style="${bgStyle}"><td style="border:1px solid #ddd; padding:8px;">${s.sku}</td><td style="border:1px solid #ddd; padding:8px; text-align:center; font-weight:bold;">${s.qty}</td></tr>`;
+                        });
+                        tableHtml += '</table>';
+                        palletDetailsDiv.innerHTML = tableHtml;
+                        
+                        // Tự động cuộn đến dòng vừa cập nhật
+                        if (highlightSku) {
+                            const row = document.getElementById('highlightRow');
+                            if (row) {
+                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }
+                    } else {
+                        palletDetailsDiv.innerHTML = '<div style="padding:10px; text-align:center; color:#666;">Chưa có hàng trong pallet này</div>';
+                    }
                     palletDetailsDiv.style.display = 'block';
                 }
             });
@@ -253,15 +316,16 @@
 
         // Hàm cập nhật danh sách Pallet khả dụng (trống)
         function fetchPallets() {
-            fetch('/api/get_pallets')
+            const type = jobTypeSelect.value;
+            fetch(`/api/get_pallets?job_type=${encodeURIComponent(type)}`)
             .then(r => r.json())
             .then(data => {
                 if(data.success) {
                     palletSelect.innerHTML = '';
                     data.pallets.forEach(p => {
                         const opt = document.createElement('option');
-                        opt.value = p;
-                        opt.innerText = p;
+                        opt.value = p.no;
+                        opt.innerText = p.label;
                         palletSelect.appendChild(opt);
                     });
                     // Cập nhật chi tiết cho pallet đầu tiên (mặc định)
@@ -392,10 +456,14 @@
                 
                 isScanning = true;
                 
-                // Disable controls
-                jobTypeSelect.disabled = true;
-                palletSelect.disabled = true;
-                palletTypeSelect.disabled = true;
+                // Ẩn form chọn
+                selectionForm.style.display = 'none';
+                
+                // Hiện thông tin header
+                document.getElementById('lblJobTypeDisplay').innerText = jobTypeSelect.value;
+                document.getElementById('lblPalletDisplay').innerText = palletSelect.value;
+                document.getElementById('lblPalletTypeDisplay').innerText = palletTypeSelect.options[palletTypeSelect.selectedIndex].text;
+                scanHeader.style.display = 'block';
                 
                 // Enable input
                 input.disabled = false;
@@ -411,10 +479,9 @@
                 // Dừng scan
                 isScanning = false;
                 
-                // Enable controls
-                jobTypeSelect.disabled = false;
-                palletSelect.disabled = false;
-                palletTypeSelect.disabled = false;
+                // Hiện lại form chọn
+                selectionForm.style.display = 'block';
+                scanHeader.style.display = 'none';
                 
                 // Disable input
                 input.disabled = true;
@@ -597,7 +664,7 @@
                         
                         // Cập nhật lại bảng lịch sử
                         fetchHistory();
-                        fetchPalletDetails(); // Cập nhật lại chi tiết pallet vừa quét
+                        fetchPalletDetails(data.sku); // Cập nhật lại chi tiết pallet vừa quét
 
                         item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
                         item.style.backgroundColor = '#d4edda';

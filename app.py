@@ -54,16 +54,23 @@ def scan_page():
     # Lọc danh sách Pallet: Loại bỏ các số pallet mà pallet = jobno trong database
     available_pallets = []
     try:
-        # Tìm các pallet cần loại bỏ (điều kiện: jobno_type có dữ liệu và pallet không null)
-        exclude_query = text("SELECT DISTINCT pallet FROM scanfile WHERE jobno_type IS NOT NULL AND pallet IS NOT NULL")
-        exclude_res = db.session.execute(exclude_query)
-        excluded_set = {row[0] for row in exclude_res}
+        # Lấy job mặc định (đầu tiên) để lọc pallet khả dụng ban đầu
+        default_job = job_types[0] if job_types else ''
+
+        # Tìm các pallet đang được sử dụng bởi Job HIỆN TẠI
+        current_query = text("SELECT DISTINCT pallet FROM scanfile WHERE jobno_type = :job_type AND pallet IS NOT NULL AND pallet != ''")
+        current_res = db.session.execute(current_query, {'job_type': default_job})
+        current_set = {str(row[0]) for row in current_res}
         
         # Tạo danh sách 1-25, trừ những số bị loại
-        available_pallets = [i for i in range(1, 26) if str(i) not in excluded_set]
+        available_pallets = []
+        for i in range(1, 26):
+            s_i = str(i)
+            status = " (Đang dùng)" if s_i in current_set else " (Trống)"
+            available_pallets.append({'no': i, 'label': f"{i}{status}"})
     except Exception as e:
         print(f"Lỗi lọc pallet: {e}")
-        available_pallets = list(range(1, 26))
+        available_pallets = [{'no': i, 'label': str(i)} for i in range(1, 26)]
 
     # Render trang scan.html cho máy quét
     return render_template('scan.html', job_types=job_types, available_pallets=available_pallets)
@@ -198,14 +205,19 @@ def delete_scan():
 
 @app.route('/api/get_pallets', methods=['GET'])
 def get_pallets():
+    job_type = request.args.get('job_type', '')
     try:
-        # Tìm các pallet đã được sử dụng (có jobno_type và pallet không rỗng)
-        exclude_query = text("SELECT DISTINCT pallet FROM scanfile WHERE jobno_type IS NOT NULL AND pallet IS NOT NULL AND pallet != ''")
-        exclude_res = db.session.execute(exclude_query)
-        excluded_set = {str(row[0]) for row in exclude_res}
+        # Tìm các pallet đang được sử dụng bởi Job HIỆN TẠI
+        current_query = text("SELECT DISTINCT pallet FROM scanfile WHERE jobno_type = :job_type AND pallet IS NOT NULL AND pallet != ''")
+        current_res = db.session.execute(current_query, {'job_type': job_type})
+        current_set = {str(row[0]) for row in current_res}
         
         # Tạo danh sách 1-25, trừ những số đã bị sử dụng
-        available_pallets = [i for i in range(1, 26) if str(i) not in excluded_set]
+        available_pallets = []
+        for i in range(1, 26):
+            s_i = str(i)
+            status = " (Đang dùng)" if s_i in current_set else " (Trống)"
+            available_pallets.append({'no': i, 'label': f"{i}{status}"})
         return jsonify({'success': True, 'pallets': available_pallets})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -293,6 +305,20 @@ def get_sku_availability():
         res = db.session.execute(query, {'job_type': job_type, 'sku': sku}).fetchone()
         count = res[0] if res else 0
         return jsonify({'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_remain_skus', methods=['POST'])
+def get_remain_skus():
+    data = request.get_json()
+    job_type = data.get('job_type', '')
+    try:
+        # Lấy danh sách SKU và số lượng chưa scan (pallet null hoặc rỗng)
+        query = text("SELECT sku, COUNT(id) as qty FROM scanfile WHERE jobno_type = :job_type AND (pallet IS NULL OR pallet = '') GROUP BY sku ORDER BY sku")
+        result = db.session.execute(query, {'job_type': job_type})
+        
+        items = [{'sku': row[0], 'qty': row[1]} for row in result]
+        return jsonify({'success': True, 'items': items})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
