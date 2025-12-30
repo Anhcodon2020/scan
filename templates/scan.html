@@ -670,7 +670,7 @@
                         }
                         
                         // Cập nhật lại bảng lịch sử
-                        fetchHistory();
+                        // fetchHistory(); // Tạm tắt để giảm tải server và tăng tốc độ scan
                         fetchPalletDetails(data.sku); // Cập nhật lại chi tiết pallet vừa quét
 
                         item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
@@ -688,7 +688,7 @@
                 })
                 .finally(() => {
                     // Mở khóa sau 500ms để tránh double scan
-                    setTimeout(() => { isProcessing = false; }, 500);
+                    setTimeout(() => { isProcessing = false; }, 200);
                 });
             }
         }

@@ -211,17 +211,17 @@ def process_scan():
             pallet_count = count_res[0] if count_res else 0
             
             # Lấy thống kê Job để cập nhật giao diện
-            total_query = text("SELECT COUNT(sscc) FROM scanfile WHERE jobno_type = :job_type")
-            total_res = db.session.execute(total_query, {'job_type': job_type}).fetchone()
-            total_sscc = total_res[0] if total_res else 0
-
-            scanned_query = text("SELECT COUNT(sscc) as qty FROM scanfile WHERE jobno_type = :job_type AND pallet !=''")
-            scanned_res = db.session.execute(scanned_query, {'job_type': job_type}).fetchone()
-            scanned_sscc = scanned_res[0] if scanned_res else 0
-
-            remain_query = text("SELECT COUNT(sscc) FROM scanfile WHERE jobno_type = :job_type AND pallet IS NULL")
-            remain_res = db.session.execute(remain_query, {'job_type': job_type}).fetchone()
-            remain_sscc = remain_res[0] if remain_res else 0
+            stats_query = text("""
+                SELECT 
+                    COUNT(id) as total,
+                    COUNT(CASE WHEN pallet IS NOT NULL AND pallet != '' THEN 1 END) as scanned
+                FROM scanfile 
+                WHERE jobno_type = :job_type
+            """)
+            stats_res = db.session.execute(stats_query, {'job_type': job_type}).fetchone()
+            total_sscc = stats_res[0] if stats_res else 0
+            scanned_sscc = stats_res[1] if stats_res else 0
+            remain_sscc = total_sscc - scanned_sscc
 
             return jsonify({'success': True, 'sku': sku, 'message': 'OK', 'pallet_count': pallet_count, 'total_sscc': total_sscc, 'scanned_sscc': scanned_sscc, 'remain_sscc': remain_sscc})
         else:
