@@ -404,6 +404,11 @@
                         <span>Tổng Carton: ${palletData.total_qty}</span>
                         <span>Tổng KG: ${finalWeight}</span>
                     </div>
+
+                    <div style="display: flex; justify-content: space-between; margin-top: 15px; font-size: 12px;">
+                        <span>Page 1/1</span>
+                        <span>${palletData.pallet_no}</span>
+                    </div>
                 </div>
             `;
 
@@ -433,16 +438,16 @@
                     const printArea = document.getElementById('printArea');
                     printArea.innerHTML = '';
                     
-                    data.items.forEach(item => {
-                        // Chỉ in những tem có tag_label = null (hoặc rỗng)
-                        if (item.tag_label) return;
+                    const printableItems = data.items.filter(item => !item.tag_label);
+                    const totalPages = printableItems.length;
 
+                    printableItems.forEach((item, index) => {
                         // Ưu tiên lấy sscc hoặc barcode hoặc id để tạo mã vạch
                         const barcodeVal = item.sscc || item.barcode || item.id;
                         const note = item.tag_label || '';
                         
                         printArea.innerHTML += `
-                            <div class="sscc-label">
+                            <div class="sscc-label" style="position: relative;">
                                 <div class="sscc-cell">
                                     <strong>FROM:</strong><br>
                                      <span>KLN ORDC # 061</span>
@@ -495,6 +500,10 @@
                                    <div style="font-size: 15px;font-weight: bold">SSCC </div>
                                     <svg class="barcode-sscc" data-value="${barcodeVal}" data-format="CODE128" data-height="80" data-width="2" data-displayValue="false"></svg>
                                     <div style="font-size: 15px;">${barcodeVal} </div>
+                                </div>
+                                <div style="position: absolute; bottom: 5px; right: 5px; font-size: 10px; text-align: right;">
+                                    <div>${index + 1}/${totalPages}</div>
+                                    <div>Pallet No:${palletNo}</div>
                                 </div>
                             </div>
                         `;
