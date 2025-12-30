@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Hàng</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -343,23 +344,34 @@
 
         // Hàm xóa scan
         function deleteScan(pallet, sku) {
-            if(!confirm(`Bạn có chắc muốn xóa SKU ${sku} khỏi Pallet ${pallet}?`)) return;
-            
-            const type = jobTypeSelect.value;
-            fetch('/api/delete_scan', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({job_type: type, pallet: pallet, sku: sku})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if(data.success) {
-                    fetchJobStats();
-                    fetchHistory();
-                    fetchPallets(); // Cập nhật lại danh sách Pallet sau khi xóa
-                    // fetchPallets sẽ tự gọi fetchPalletDetails
-                } else {
-                    alert('Lỗi: ' + data.message);
+            Swal.fire({
+                title: 'Xác nhận xóa?',
+                text: `Bạn có chắc muốn xóa SKU ${sku} khỏi Pallet ${pallet}?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Xóa',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const type = jobTypeSelect.value;
+                    fetch('/api/delete_scan', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({job_type: type, pallet: pallet, sku: sku})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if(data.success) {
+                            fetchJobStats();
+                            fetchHistory();
+                            fetchPallets(); 
+                            Swal.fire('Đã xóa!', 'SKU đã được xóa khỏi Pallet.', 'success');
+                        } else {
+                            Swal.fire('Lỗi', data.message, 'error');
+                        }
+                    });
                 }
             });
         }
@@ -411,41 +423,54 @@
         // Cấu hình âm thanh (Web Audio API)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-        function playSuccessSound() {
-            // Beep cao (Success)
+        function playSound(type) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
             
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // 1200Hz
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
             
-            oscillator.start();
-            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.15);
-            oscillator.stop(audioCtx.currentTime + 0.15);
-        }
-
-        function playErrorSound() {
-            // Rung điện thoại nếu hỗ trợ (Vibration API)
-            if (navigator.vibrate) {
-                navigator.vibrate([200, 100, 200]); // Rung 200ms, nghỉ 100ms, rung tiếp 200ms
+            if (type === 'success') {
+                // Success: Beep cao, ngắn, trong trẻo
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1200, now);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.15);
+                oscillator.stop(now + 0.15);
+            } 
+            else if (type === 'not_found') {
+                // Error: Not Found (Không có trong Masterdata) - Âm thanh trượt xuống
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); // Rung 3 lần ngắn
+                
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(600, now);
+                oscillator.frequency.linearRampToValueAtTime(200, now + 0.4); // Trượt từ 600Hz xuống 200Hz
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.4);
+                oscillator.stop(now + 0.4);
+            } 
+            else if (type === 'duplicate') {
+                // Error: Duplicate/Logic (Không tìm thấy dữ liệu chờ/Đã scan rồi) - Âm thanh trầm, rè
+                if (navigator.vibrate) navigator.vibrate(500); // Rung dài 1 lần
+                
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(100, now); // Tần số thấp 100Hz
+                oscillator.start();
+                gainNode.gain.setValueAtTime(1, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.4);
+                oscillator.stop(now + 0.4);
+            } 
+            else {
+                // Generic Error
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(150, now);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.3);
+                oscillator.stop(now + 0.3);
             }
-
-            // Beep trầm (Error)
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            
-            oscillator.type = 'sawtooth';
-            oscillator.frequency.setValueAtTime(150, audioCtx.currentTime); // 150Hz
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            
-            oscillator.start();
-            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.3);
-            oscillator.stop(audioCtx.currentTime + 0.3);
         }
 
         btnToggleScan.addEventListener('click', () => {
@@ -457,7 +482,12 @@
             if (!isScanning) {
                 // Bắt đầu scan
                 if (!palletSelect.value) {
-                    alert("Vui lòng chọn Số Pallet trước khi bắt đầu!");
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Chưa chọn Pallet',
+                        text: 'Vui lòng chọn Số Pallet trước khi bắt đầu!',
+                        confirmButtonText: 'OK'
+                    });
                     return;
                 }
                 
@@ -562,10 +592,18 @@
                         };
                         btnCamera.innerText = "❌ Tắt Camera";
                     } else {
-                        alert("Không tìm thấy camera nào!");
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Lỗi Camera',
+                            text: 'Không tìm thấy camera nào!',
+                        });
                     }
                 }).catch(err => {
-                    alert("Lỗi truy cập camera: " + err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Lỗi Camera',
+                        text: "Lỗi truy cập camera: " + err,
+                    });
                 });
             }
         });
@@ -652,7 +690,7 @@
                     item.className = 'scan-item';
                     
                     if (data.success) {
-                        playSuccessSound();
+                        playSound('success');
                         scanCount++;
                         countSpan.innerText = scanCount;
                         
@@ -676,15 +714,28 @@
                         item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
                         item.style.backgroundColor = '#d4edda';
                     } else {
-                        playErrorSound();
+                        // Phân loại lỗi để phát âm thanh
+                        const msg = data.message.toLowerCase();
+                        if (msg.includes('masterdata') || msg.includes('prefix')) {
+                            playSound('not_found'); // Lỗi không tồn tại mã
+                        } else if (msg.includes('không tìm thấy dữ liệu chờ') || msg.includes('duplicate')) {
+                            playSound('duplicate'); // Lỗi đã scan rồi hoặc không có trong job
+                        } else {
+                            playSound('error'); // Lỗi chung
+                        }
+
                         item.innerHTML = `<span>${code}</span> <span style="color:red; font-weight:bold">${data.message}</span>`;
                         item.style.backgroundColor = '#f8d7da';
                     }
                     list.prepend(item);
                 })
                 .catch(err => {
-                    playErrorSound();
-                    alert('Lỗi kết nối server!');
+                    playSound('error');
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Lỗi kết nối',
+                        text: 'Không thể kết nối đến server!',
+                    });
                 })
                 .finally(() => {
                     // Mở khóa sau 500ms để tránh double scan
@@ -698,18 +749,28 @@
             const palletNo = document.getElementById('palletNo').value;
             const palletType = document.getElementById('palletType').value;
 
-            if(!confirm(`Xác nhận hoàn thành Pallet ${palletNo}? Thông báo sẽ được gửi đến bộ phận in.`)) return;
-
-            fetch('/api/finish_pallet', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({job_type: jobType, pallet_no: palletNo, pallet_type: palletType})
-            })
-            .then(r => r.json())
-            .then(data => {
-                alert(data.message);
-            })
-            .catch(e => alert('Lỗi: ' + e));
+            Swal.fire({
+                title: 'Hoàn thành Pallet?',
+                text: `Xác nhận hoàn thành Pallet ${palletNo}? Thông báo sẽ được gửi đến bộ phận in.`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Đồng ý',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/api/finish_pallet', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({job_type: jobType, pallet_no: palletNo, pallet_type: palletType})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) Swal.fire('Thành công', data.message, 'success');
+                        else Swal.fire('Lỗi', data.message, 'error');
+                    })
+                    .catch(e => Swal.fire('Lỗi', 'Lỗi kết nối: ' + e, 'error'));
+                }
+            });
         }
     </script>
 </body>
