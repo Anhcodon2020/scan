@@ -360,7 +360,9 @@
                 inputAttributes: {
                     min: 1,
                     step: 1,
-                    placeholder: 'Nhập số lượng...'
+                    placeholder: 'Nhập số lượng...',
+                    inputmode: 'numeric',
+                    pattern: '[0-9]*'
                 },
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
@@ -672,7 +674,8 @@
         // Giữ focus vào ô input bất kể click đi đâu (Chế độ Kiosk/Scanner)
         // Chỉ focus khi modal không mở
         document.addEventListener('click', (e) => {
-            if (isScanning && modal.style.display !== "block" && e.target !== input && !e.target.closest('.modal-content') && e.target !== btnToggleScan) {
+            // Fix: Không chiếm focus nếu SweetAlert đang mở (!Swal.isVisible())
+            if (isScanning && modal.style.display !== "block" && !Swal.isVisible() && e.target !== input && !e.target.closest('.modal-content') && e.target !== btnToggleScan) {
                 input.focus();
             }
         });
@@ -758,11 +761,17 @@
                                 inputAttributes: {
                                     min: 1,
                                     max: data.count,
-                                    step: 1
+                                    step: 1,
+                                    inputmode: 'numeric',
+                                    pattern: '[0-9]*'
                                 },
                                 showCancelButton: true,
                                 confirmButtonText: 'Xác nhận',
                                 cancelButtonText: 'Hủy',
+                                didOpen: () => {
+                                    const input = Swal.getInput();
+                                    if (input) input.select(); // Tự động bôi đen số lượng để nhập nhanh
+                                },
                                 preConfirm: (qty) => {
                                     if (!qty || qty < 1 || qty > data.count) {
                                         Swal.showValidationMessage(`Số lượng phải từ 1 đến ${data.count}`);
