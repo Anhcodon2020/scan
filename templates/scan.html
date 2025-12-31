@@ -739,7 +739,7 @@
                 })
                 .finally(() => {
                     // Mở khóa sau 500ms để tránh double scan
-                    setTimeout(() => { isProcessing = false; }, 200);
+                    setTimeout(() => { isProcessing = false; }, 50);
                 });
             }
         }
