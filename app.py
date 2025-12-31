@@ -171,11 +171,11 @@ def process_scan():
     pallet_no = data.get('pallet_no', '')
     pallet_type = data.get('pallet_type', '')
 
-    if not barcode or len(barcode) < 14:
-        return jsonify({'success': False, 'message': 'Mã vạch không hợp lệ (cần >= 14 ký tự)'})
+    if not barcode or len(barcode) < 10:
+        return jsonify({'success': False, 'message': 'Mã vạch không hợp lệ (cần >= 10 ký tự)'})
 
-    # Logic: Cắt từ vị trí số 9 (index 8), lấy 5 ký tự
-    extracted_prefix = barcode[8:13]
+    # Logic: Cắt bên phải vị trí số 2 lấy 5 ký tự
+    extracted_prefix = barcode[-7:-2]
 
     try:
         # 1. Tìm SKU trong masterdata dựa trên prefix (refix)
