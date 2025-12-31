@@ -108,6 +108,10 @@
 
         <!-- autocomplete="off" để tránh bàn phím ảo che khuất hoặc gợi ý cũ -->
         <input type="text" id="barcodeInput" placeholder="Nhấn 'Bắt đầu Scan' để nhập..."  autocomplete="off" inputmode="none" disabled style="background-color: #e9ecef;">
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" id="barcodeInput" placeholder="Nhấn 'Bắt đầu Scan' để nhập..."  autocomplete="off" inputmode="none" disabled style="background-color: #e9ecef; margin-bottom: 0; flex: 1;">
+            <button id="btnKeyboardToggle" style="padding: 0 15px; font-size: 24px; cursor: pointer; background: #6c757d; color: white; border: none; border-radius: 5px;" title="Bật/Tắt bàn phím ảo">⌨️</button>
+        </div>
         
         <div id="status" style="margin-bottom: 10px; font-size: 18px;">
             <div style="font-size: 0.9em; color: #333; margin-bottom: 5px; background: #eee; padding: 5px; border-radius: 4px;">
@@ -176,6 +180,7 @@
         const cameraSelect = document.getElementById('cameraSelect');
         const selectionForm = document.getElementById('selectionForm');
         const scanHeader = document.getElementById('scanHeader');
+        const btnKeyboardToggle = document.getElementById('btnKeyboardToggle');
         
         // Modal Logic
         const modal = document.getElementById('skuModal');
@@ -436,6 +441,23 @@
                 }
             });
         }
+
+        // Xử lý nút bật/tắt bàn phím ảo
+        btnKeyboardToggle.addEventListener('click', () => {
+            if (input.disabled) return; // Không làm gì nếu chưa bắt đầu scan
+
+            const currentMode = input.getAttribute('inputmode');
+            if (currentMode === 'none') {
+                input.setAttribute('inputmode', 'text'); // Bật bàn phím
+                btnKeyboardToggle.style.backgroundColor = '#28a745'; // Xanh
+            } else {
+                input.setAttribute('inputmode', 'none'); // Tắt bàn phím
+                btnKeyboardToggle.style.backgroundColor = '#6c757d'; // Xám
+            }
+            // Blur và Focus lại để áp dụng thay đổi bàn phím trên điện thoại
+            input.blur();
+            setTimeout(() => input.focus(), 100);
+        });
 
         // Gọi khi đổi Job Type và khi mới vào trang
         jobTypeSelect.addEventListener('change', () => {
