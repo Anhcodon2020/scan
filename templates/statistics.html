@@ -27,10 +27,18 @@
         <a href="/" class="btn-back">← Quay lại Menu</a>
         <h2>Thống Kê Số Lượng Pallet Theo Job</h2>
         
+        <div style="margin-bottom: 15px; text-align: right;">
+            <label for="filterJobType" style="font-weight: bold; margin-right: 10px;">Lọc theo Job No:</label>
+            <select id="filterJobType" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <option value="all">Tất cả</option>
+            </select>
+        </div>
+
         <table>
             <thead>
                 <tr>
                     <th>Job No</th>
+                    <th>Job Type</th>
                     <th>Pallet 1.2m</th>
                     <th>Pallet 1.6m</th>
                     <th>Pallet 1.9m</th>
@@ -39,9 +47,20 @@
                 </tr>
             </thead>
             <tbody>
-                {% for job, counts in stats.items() %}
+                <!-- Dòng Tổng Cộng -->
+                <tr style="background-color: #fff3cd; font-weight: bold; border-bottom: 2px solid #dee2e6;">
+                    <td colspan="2" style="text-align: right; color: #856404;">TỔNG CỘNG:</td>
+                    <td style="color: #856404;">{{ grand_total['1.2'] }}</td>
+                    <td style="color: #856404;">{{ grand_total['1.6'] }}</td>
+                    <td style="color: #856404;">{{ grand_total['1.9'] }}</td>
+                    <td style="color: #856404;">{{ grand_total['loose'] }}</td>
+                    <td class="total-col" style="color: #856404;">{{ grand_total['total'] }}</td>
+                </tr>
+
+                {% for (job_no, job_type), counts in stats.items() %}
                 <tr>
-                    <td class="job-col">{{ job }}</td>
+                    <td class="job-col">{{ job_no }}</td>
+                    <td>{{ job_type }}</td>
                     <td>{{ counts['1.2'] }}</td>
                     <td>{{ counts['1.6'] }}</td>
                     <td>{{ counts['1.9'] }}</td>
@@ -50,11 +69,124 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="6" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
+                    <td colspan="7" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2 style="margin-top: 40px; color: #dc3545;">Báo Cáo Hàng Chưa Scan (Tồn)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Job No</th>
+                    <th>Job Type</th>
+                    <th>Số Carton Chưa Scan</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for (job_no, job_type), count in remain_stats.items() %}
+                <tr>
+                    <td class="job-col">{{ job_no }}</td>
+                    <td>{{ job_type }}</td>
+                    <td style="font-weight: bold; color: #dc3545;">{{ count }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" style="padding: 20px; color: #666;">Không có dữ liệu tồn (Đã scan hết).</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const filterSelect = document.getElementById('filterJobType');
+            const tables = document.querySelectorAll('table');
+            const jobTypes = new Set();
+
+            // 1. Thu thập tất cả Job Type từ dữ liệu bảng
+            tables.forEach(table => {
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    // Kiểm tra dòng dữ liệu (bỏ qua dòng thông báo "Chưa có dữ liệu" có colspan)
+                    if (cells.length > 1 && !cells[0].hasAttribute('colspan')) {
+                        const type = cells[0].innerText.trim();
+                        if (type) jobTypes.add(type);
+                    }
+                });
+            });
+
+            // 2. Thêm vào dropdown (Sắp xếp A-Z)
+            Array.from(jobTypes).sort().forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.innerText = type;
+                filterSelect.appendChild(option);
+            });
+
+            // 3. Xử lý sự kiện lọc
+            filterSelect.addEventListener('change', function() {
+                const selected = this.value;
+                tables.forEach(table => {
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length > 1 && !cells[0].hasAttribute('colspan')) {
+                            const type = cells[0].innerText.trim();
+                            if (selected === 'all' || type === selected) {
+                                row.style.display = '';
+                            } else {
+                                row.style.display = 'none';
+                            }
+                        }
+                    });
+                    updateTotals(table);
+                });
+            });
+
+            function updateTotals(table) {
+                const rows = table.querySelectorAll('tbody tr');
+                let totalRow = null;
+
+                // Tìm dòng tổng cộng (dựa vào text TỔNG CỘNG)
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i].cells[0] && rows[i].cells[0].innerText.includes('TỔNG CỘNG')) {
+                        totalRow = rows[i];
+                        break;
+                    }
+                }
+
+                if (!totalRow) return;
+
+                let sum12 = 0, sum16 = 0, sum19 = 0, sumLoose = 0, sumTotal = 0;
+
+                rows.forEach(row => {
+                    // Bỏ qua dòng tổng cộng và các dòng bị ẩn
+                    if (row === totalRow || row.style.display === 'none') return;
+
+                    const cells = row.querySelectorAll('td');
+                    // Chỉ tính các dòng dữ liệu (không có colspan)
+                    if (cells.length > 1 && !cells[0].hasAttribute('colspan')) {
+                        sum12 += parseInt(cells[2].innerText) || 0;
+                        sum16 += parseInt(cells[3].innerText) || 0;
+                        sum19 += parseInt(cells[4].innerText) || 0;
+                        sumLoose += parseInt(cells[5].innerText) || 0;
+                        sumTotal += parseInt(cells[6].innerText) || 0;
+                    }
+                });
+
+                // Cập nhật lại dòng tổng cộng
+                // Do ô đầu tiên colspan=2 nên index sẽ lệch 1 so với dòng dữ liệu
+                totalRow.cells[1].innerText = sum12;
+                totalRow.cells[2].innerText = sum16;
+                totalRow.cells[3].innerText = sum19;
+                totalRow.cells[4].innerText = sumLoose;
+                totalRow.cells[5].innerText = sumTotal;
+            }
+        });
+    </script>
 </body>
 </html>

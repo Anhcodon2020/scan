@@ -274,7 +274,7 @@ def delete_scan():
                     return jsonify({'success': False, 'message': 'Không tìm thấy dữ liệu để xóa'})
 
                 # Xóa (update về null) các ID này
-                update_query = text("UPDATE scanfile SET pallet = NULL, pallet_type = NULL WHERE id IN :ids")
+                update_query = text("UPDATE scanfile SET pallet = '', pallet_type = '' WHERE id IN :ids")
                 update_query = update_query.bindparams(bindparam('ids', expanding=True))
                 db.session.execute(update_query, {'ids': ids})
                 db.session.commit()
@@ -285,6 +285,59 @@ def delete_scan():
         db.session.execute(query, {'job_type': job_type, 'pallet': pallet, 'sku': sku})
         db.session.commit()
         return jsonify({'success': True, 'message': 'Đã xóa tất cả thùng của SKU này.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/check_barcode', methods=['POST'])
+def check_barcode():
+    data = request.get_json()
+    barcode = data.get('barcode', '')
+    job_type = data.get('job_type', '')
+
+    if not barcode or len(barcode) < 10:
+        return jsonify({'success': False, 'message': 'Mã vạch không hợp lệ'})
+
+    # Logic: Cắt bên phải vị trí số 1 lấy 5 ký tự (giống process_scan)
+    extracted_prefix = barcode[-6:-1]
+
+    try:
+        master_query = text("SELECT sku FROM masterdata WHERE refix = :refix")
+        master_res = db.session.execute(master_query, {'refix': extracted_prefix}).fetchone()
+
+        if not master_res:
+            return jsonify({'success': False, 'message': f'Prefix {extracted_prefix} không có trong Masterdata'})
+        
+        sku = master_res[0]
+
+        # Đếm số lượng khả dụng (chưa có pallet) của SKU này trong Job
+        count_query = text("SELECT COUNT(id) FROM scanfile WHERE sku = :sku AND jobno_type = :job_type AND (pallet IS NULL OR pallet = '')")
+        count_res = db.session.execute(count_query, {'sku': sku, 'job_type': job_type}).fetchone()
+        count = count_res[0] if count_res else 0
+
+        return jsonify({'success': True, 'sku': sku, 'count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/bulk_update', methods=['POST'])
+def bulk_update():
+    data = request.get_json()
+    sku = data.get('sku', '')
+    job_type = data.get('job_type', '')
+    pallet_no = data.get('pallet_no', '')
+    pallet_type = data.get('pallet_type', '')
+
+    try:
+        # Cập nhật tất cả các item chưa có pallet của SKU này vào Pallet hiện tại
+        update_query = text("""
+            UPDATE scanfile 
+            SET pallet = :pallet, pallet_type = :pallet_type 
+            WHERE sku = :sku AND jobno_type = :job_type AND (pallet IS NULL OR pallet = '')
+        """)
+        result = db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'sku': sku, 'job_type': job_type})
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Đã cập nhật {result.rowcount} thùng SKU {sku} vào Pallet {pallet_no}.', 'count': result.rowcount, 'sku': sku})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
@@ -723,25 +776,29 @@ def stats_page():
         # Query: Đếm số lượng pallet duy nhất (DISTINCT pallet) theo từng loại và job
         # Chỉ lấy những dòng đã có pallet (không null, không rỗng)
         query = text("""
-            SELECT jobno, pallet_type, COUNT(DISTINCT pallet), COUNT(id)
+            SELECT jobno,jobno_type, pallet_type, COUNT(DISTINCT pallet), COUNT(id)
             FROM scanfile
             WHERE pallet IS NOT NULL AND pallet != ''
-            GROUP BY jobno, pallet_type
+            GROUP BY jobno, pallet_type,jobno_type
             ORDER BY jobno
         """)
         result = db.session.execute(query)
         
         stats = {}
         for row in result:
-            job = row[0]
-            p_type = row[1]
-            pallet_count = row[2]
-            sscc_count = row[3]
+            job_no = row[0]
+            job_type = row[1]
+            p_type = row[2]
+            pallet_count = row[3]
+            sscc_count = row[4]
             
-            if not job: continue
+            if not job_no: continue
             
-            if job not in stats:
-                stats[job] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0}
+            # Sử dụng khóa là tuple (Job No, Job Type) để nhóm
+            key = (job_no, job_type)
+            
+            if key not in stats:
+                stats[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0}
             
             # Nếu là loose (Loose Carton) thì đếm số SSCC (thùng), ngược lại đếm số Pallet
             if p_type == 'loose' or p_type == 'loosecarton':
@@ -749,11 +806,32 @@ def stats_page():
             else:
                 count = pallet_count
 
-            if p_type in stats[job]:
-                stats[job][p_type] += count
-                stats[job]['total'] += count
+            if p_type in stats[key]:
+                stats[key][p_type] += count
+                stats[key]['total'] += count
 
-        return render_template('statistics.html', stats=stats)
+        # Tính tổng cộng (Grand Total) cho hàng đầu trang
+        grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0}
+        for s in stats.values():
+            grand_total['1.2'] += s['1.2']
+            grand_total['1.6'] += s['1.6']
+            grand_total['1.9'] += s['1.9']
+            grand_total['loose'] += s['loose']
+            grand_total['total'] += s['total']
+
+        # Thống kê hàng chưa scan (Tồn) theo jobno_type
+        remain_query = text("""
+            SELECT jobno, jobno_type, COUNT(id)
+            FROM scanfile
+            WHERE pallet IS NULL OR pallet = ''
+            GROUP BY jobno, jobno_type
+            ORDER BY jobno
+        """)
+        remain_result = db.session.execute(remain_query)
+        # Lưu key là tuple (jobno, jobno_type)
+        remain_stats = {(row[0], row[1]): row[2] for row in remain_result}
+
+        return render_template('statistics.html', stats=stats, remain_stats=remain_stats, grand_total=grand_total)
     except Exception as e:
         return f"Lỗi: {str(e)}"
 

@@ -95,6 +95,11 @@
             <button onclick="finishPallet()" style="margin-top: 10px; width: 100%; padding: 8px; background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">✅ Báo Xong Pallet</button>
         </div>
 
+        <div style="margin-bottom: 15px; display: flex; align-items: center; background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba;">
+            <input type="checkbox" id="chkBulkScan" style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;">
+            <label for="chkBulkScan" style="font-weight: bold; font-size: 16px; color: #856404; cursor: pointer; margin-bottom: 0;">Chế độ Scan Hàng Loạt</label>
+        </div>
+
         <button id="btnToggleScan" style="margin-bottom: 15px; width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">Bắt đầu Scan</button>
 
         <button id="btnCamera" style="display:none; margin-bottom: 15px; width: 100%; padding: 12px; background-color: #17a2b8; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; font-weight: bold;">📷 Scan bằng Camera</button>
@@ -728,9 +733,67 @@
             const jobType = document.getElementById('jobType').value;
             const palletNo = document.getElementById('palletNo').value;
             const palletType = document.getElementById('palletType').value;
+            const isBulk = document.getElementById('chkBulkScan').checked;
             
             // Cập nhật số pallet đang hiển thị
             document.getElementById('lblPallet').innerText = palletNo;
+
+            if (isBulk) {
+                // --- LOGIC SCAN HÀNG LOẠT ---
+                fetch('/api/check_barcode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode: code, job_type: jobType })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.count > 0) {
+                            // Hiển thị xác nhận
+                            return Swal.fire({
+                                title: 'Scan Hàng Loạt',
+                                html: `Tìm thấy SKU: <b>${data.sku}</b><br>Số lượng còn lại: <b>${data.count}</b><br><br>Bạn có muốn scan tất cả vào Pallet <b>${palletNo}</b> (${palletType})?`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Đồng ý Scan Hết',
+                                cancelButtonText: 'Hủy'
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    // Gọi API update hàng loạt
+                                    return fetch('/api/bulk_update', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ sku: data.sku, job_type: jobType, pallet_no: palletNo, pallet_type: palletType })
+                                    }).then(r => r.json());
+                                } else {
+                                    return { cancelled: true };
+                                }
+                            });
+                        } else {
+                            return { success: false, message: `SKU ${data.sku} đã hết hàng hoặc không tìm thấy trong Job này.` };
+                        }
+                    } else {
+                        return data; // Trả về lỗi từ check_barcode
+                    }
+                })
+                .then(result => {
+                    if (result && result.success) {
+                        playSound('success');
+                        Swal.fire('Thành công', result.message, 'success');
+                        fetchJobStats();
+                        fetchPalletDetails(result.sku);
+                    } else if (result && !result.cancelled) {
+                        playSound('error');
+                        Swal.fire('Lỗi', result.message, 'error');
+                    }
+                })
+                .catch(err => Swal.fire('Lỗi', 'Lỗi hệ thống: ' + err, 'error'))
+                .finally(() => {
+                    isQueueRunning = false;
+                    processScanQueue();
+                });
+            } else {
+                // --- LOGIC SCAN ĐƠN LẺ (CŨ) ---
                 // Gửi dữ liệu lên server xử lý
                 fetch('/api/scan', {
                     method: 'POST',
@@ -809,6 +872,7 @@
                     isQueueRunning = false;
                     processScanQueue(); // Xử lý tiếp mã tiếp theo trong hàng đợi
                 });
+            }
         }
 
         function finishPallet() {
