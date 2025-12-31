@@ -462,6 +462,15 @@
                 gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.4);
                 oscillator.stop(now + 0.4);
             } 
+            else if (type === 'unlock') {
+                // Unlock: Âm thanh ngắn báo hiệu sẵn sàng
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, now);
+                oscillator.start();
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.1);
+                oscillator.stop(now + 0.1);
+            }
             else {
                 // Generic Error
                 if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -739,7 +748,10 @@
                 })
                 .finally(() => {
                     // Mở khóa sau 500ms để tránh double scan
-                    setTimeout(() => { isProcessing = false; }, 50);
+                    setTimeout(() => { 
+                        isProcessing = false; 
+                        playSound('unlock');
+                    }, 0);
                 });
             }
         }
