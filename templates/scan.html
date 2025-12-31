@@ -107,7 +107,7 @@
         <div id="reader" style="width: 100%; margin-bottom: 15px;"></div>
 
         <!-- autocomplete="off" để tránh bàn phím ảo che khuất hoặc gợi ý cũ -->
-        <input type="text" id="barcodeInput" placeholder="Nhấn 'Bắt đầu Scan' để nhập..."  autocomplete="off" disabled style="background-color: #e9ecef;">
+        <input type="text" id="barcodeInput" placeholder="Nhấn 'Bắt đầu Scan' để nhập..."  autocomplete="off" inputmode="none" disabled style="background-color: #e9ecef;">
         
         <div id="status" style="margin-bottom: 10px; font-size: 18px;">
             <div style="font-size: 0.9em; color: #333; margin-bottom: 5px; background: #eee; padding: 5px; border-radius: 4px;">
@@ -671,12 +671,16 @@
 
         let scanCount = 0;
 
-        // Giữ focus vào ô input bất kể click đi đâu (Chế độ Kiosk/Scanner)
-        // Chỉ focus khi modal không mở
-        document.addEventListener('click', (e) => {
-            // Fix: Không chiếm focus nếu SweetAlert đang mở (!Swal.isVisible())
-            if (isScanning && modal.style.display !== "block" && !Swal.isVisible() && e.target !== input && !e.target.closest('.modal-content') && e.target !== btnToggleScan) {
-                input.focus();
+        // Giữ focus vào ô input (Chế độ Kiosk) - Tự động focus lại khi bị mất focus (blur)
+        input.addEventListener('blur', () => {
+            if (isScanning && modal.style.display !== "block" && !Swal.isVisible()) {
+                // Delay nhỏ (200ms) để cho phép các sự kiện click nút (như Dừng Scan, Xóa) được xử lý trước
+                setTimeout(() => {
+                    // Kiểm tra lại trạng thái sau delay
+                    if (isScanning && document.activeElement !== input && modal.style.display !== "block" && !Swal.isVisible()) {
+                        input.focus();
+                    }
+                }, 200);
             }
         });
 
