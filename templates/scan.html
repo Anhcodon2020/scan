@@ -114,7 +114,7 @@
                     <div id="progressBar" style="width: 0%; height: 100%; background-color: #28a745; text-align: center; line-height: 15px; color: white; font-size: 10px; transition: width 0.3s;">0%</div>
                 </div>
             </div>
-            Đã scan : <span id="count">0</span><br>
+            Đã scan : <span id="count">0</span> | Chờ xử lý: <span id="queueCount" style="color: orange; font-weight: bold;">0</span><br>
             <strong>Tổng Pallet <span id="lblPallet"></span>: <span id="palletTotal" style="color: #007bff; font-size: 1.2em;">0</span></strong>
             <div id="palletDetails" style="font-size: 0.9em; color: #555; margin-top: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #007bff; display: none; max-height: 200px; overflow-y: auto;"></div>
         </div>
@@ -417,7 +417,9 @@
         fetchPalletDetails(); // Gọi lần đầu khi load trang
 
         let isScanning = false;
-        let isProcessing = false;
+        // Thay thế isProcessing bằng hàng đợi
+        let scanQueue = [];
+        let isQueueRunning = false;
         let html5QrcodeScanner = null;
         
         // Cấu hình âm thanh (Web Audio API)
@@ -462,15 +464,6 @@
                 gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.4);
                 oscillator.stop(now + 0.4);
             } 
-            else if (type === 'unlock') {
-                // Unlock: Âm thanh ngắn báo hiệu sẵn sàng
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, now);
-                oscillator.start();
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.exponentialRampToValueAtTime(0.00001, now + 0.1);
-                oscillator.stop(now + 0.1);
-            }
             else {
                 // Generic Error
                 if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -617,12 +610,22 @@
             }
         });
 
+        let lastCamCode = null;
+        let lastCamTime = 0;
+
         function startCamera(cameraId) {
             html5QrcodeScanner = new Html5Qrcode("reader");
             html5QrcodeScanner.start(
                 cameraId, 
-                { fps: 10, qrbox: 250 },
+                { fps: 20, qrbox: 250 }, // Tăng FPS lên 20 để bắt hình nhanh hơn
                 (decodedText, decodedResult) => {
+                    // Debounce cho Camera: Tránh quét lại mã cũ trong 1.5 giây
+                    const now = Date.now();
+                    if (decodedText === lastCamCode && (now - lastCamTime < 1500)) {
+                        return;
+                    }
+                    lastCamCode = decodedText;
+                    lastCamTime = now;
                     handleScan(decodedText);
                 },
                 (errorMessage) => {
@@ -675,18 +678,27 @@
 
         // Hàm xử lý scan chung (cho cả Input và Camera)
         function handleScan(code) {
-            if (isProcessing) return; // Ngăn chặn quét liên tục (Debounce/Lock)
+            // Đẩy vào hàng đợi để xử lý, không chặn người dùng quét tiếp
+            if (code) {
+                scanQueue.push(code);
+                document.getElementById('queueCount').innerText = scanQueue.length;
+                processScanQueue();
+            }
+        }
 
+        function processScanQueue() {
+            if (isQueueRunning || scanQueue.length === 0) return;
+
+            isQueueRunning = true;
+            const code = scanQueue.shift();
+            document.getElementById('queueCount').innerText = scanQueue.length;
+            
             const jobType = document.getElementById('jobType').value;
             const palletNo = document.getElementById('palletNo').value;
             const palletType = document.getElementById('palletType').value;
             
             // Cập nhật số pallet đang hiển thị
             document.getElementById('lblPallet').innerText = palletNo;
-
-            if (code) {
-                isProcessing = true; // Khóa lại
-
                 // Gửi dữ liệu lên server xử lý
                 fetch('/api/scan', {
                     method: 'POST',
@@ -747,13 +759,9 @@
                     });
                 })
                 .finally(() => {
-                    // Mở khóa sau 500ms để tránh double scan
-                    setTimeout(() => { 
-                        isProcessing = false; 
-                        playSound('unlock');
-                    }, 0);
+                    isQueueRunning = false;
+                    processScanQueue(); // Xử lý tiếp mã tiếp theo trong hàng đợi
                 });
-            }
         }
 
         function finishPallet() {
