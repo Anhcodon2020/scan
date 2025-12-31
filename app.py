@@ -174,8 +174,8 @@ def process_scan():
     if not barcode or len(barcode) < 10:
         return jsonify({'success': False, 'message': 'Mã vạch không hợp lệ (cần >= 10 ký tự)'})
 
-    # Logic: Cắt bên phải vị trí số 2 lấy 5 ký tự
-    extracted_prefix = barcode[-7:-2]
+    # Logic: Cắt bên phải vị trí số 1 lấy 5 ký tự
+    extracted_prefix = barcode[-6:-1]
 
     try:
         # 1. Tìm SKU trong masterdata dựa trên prefix (refix)
@@ -638,8 +638,8 @@ def finish_pallet():
 @app.route('/api/get_logs', methods=['GET'])
 def get_logs():
     try:
-        # Lấy 20 log mới nhất
-        query = text("SELECT id, username, action, message, created_at, is_read FROM logs ORDER BY id DESC LIMIT 20")
+        # Lấy 10 log mới nhất
+        query = text("SELECT id, username, action, message, created_at, is_read FROM logs ORDER BY id DESC LIMIT 10")
         result = db.session.execute(query)
         logs = [{'id': r[0], 'username': r[1], 'action': r[2], 'message': r[3], 'created_at': str(r[4]), 'is_read': bool(r[5])} for r in result]
         return jsonify({'success': True, 'logs': logs})
