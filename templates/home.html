@@ -1,79 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trang Chủ</title>
+    <title>Trang Chủ - Hệ Thống Quét Hàng</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
-        .container { max-width: 800px; margin: 0 auto; }
-        
-        .header { text-align: center; margin-bottom: 20px; padding: 10px; }
-        .header h1 { margin: 0; color: #333; font-size: 24px; }
-        .header p { color: #666; margin-top: 5px; }
-
-        .menu { 
-            display: grid; 
-            grid-template-columns: 1fr; 
-            gap: 15px; 
-        }
-        
-        /* Desktop: 2 columns */
-        @media (min-width: 600px) {
-            .menu { grid-template-columns: 1fr 1fr; }
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --info-color: #17a2b8;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --purple-color: #6f42c1;
+            --light-bg: #f8f9fa;
+            --dark-text: #343a40;
+            --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --hover-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
         }
 
-        .menu a { 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            padding: 20px; 
-            background-color: white; 
-            border-radius: 8px; 
-            text-decoration: none; 
-            color: #333; 
-            font-weight: bold; 
-            font-size: 18px; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border: 1px solid #ddd;
-            transition: background-color 0.2s;
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #e9ecef;
+            color: var(--dark-text);
         }
-        .menu a:active { background-color: #e2e6ea; transform: translateY(1px); }
-        
-        /* Highlight Scan Button */
-        .menu a[href="/scan"] { 
-            background-color: #007bff; 
-            color: white; 
-            border: none; 
-            grid-column: 1 / -1; /* Full width */
-            font-size: 22px;
+
+        .navbar {
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .brand {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+
+        .btn-logout {
+            color: var(--danger-color);
+            text-decoration: none;
+            font-weight: 600;
+            border: 1px solid var(--danger-color);
+            padding: 5px 12px;
+            border-radius: 20px;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .hero {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            color: var(--dark-text);
+        }
+
+        .hero p {
+            color: var(--secondary-color);
+            font-size: 1.1rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
             padding: 25px;
+            text-decoration: none;
+            color: var(--dark-text);
+            box-shadow: var(--card-shadow);
+            transition: transform 0.3s, box-shadow 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            border-top: 5px solid transparent;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--hover-shadow);
+        }
+
+        .card-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background-color: var(--light-bg);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .card h3 {
+            margin: 10px 0 5px;
+            font-size: 1.2rem;
+        }
+
+        .card p {
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+            margin: 0;
+        }
+
+        /* Card Specific Styles */
+        .card-scan { border-color: var(--primary-color); }
+        .card-scan .card-icon { color: var(--primary-color); background-color: rgba(0, 123, 255, 0.1); }
+        .card-scan:hover .card-icon { background-color: var(--primary-color); color: white; }
+
+        .card-stats { border-color: var(--success-color); }
+        .card-stats .card-icon { color: var(--success-color); background-color: rgba(40, 167, 69, 0.1); }
+        .card-stats:hover .card-icon { background-color: var(--success-color); color: white; }
+
+        .card-print { border-color: var(--warning-color); }
+        .card-print .card-icon { color: var(--warning-color); background-color: rgba(255, 193, 7, 0.1); }
+        .card-print:hover .card-icon { background-color: var(--warning-color); color: white; }
+
+        .card-tag { border-color: var(--info-color); }
+        .card-tag .card-icon { color: var(--info-color); background-color: rgba(23, 162, 184, 0.1); }
+        .card-tag:hover .card-icon { background-color: var(--info-color); color: white; }
+
+        .card-users { border-color: var(--purple-color); }
+        .card-users .card-icon { color: var(--purple-color); background-color: rgba(111, 66, 193, 0.1); }
+        .card-users:hover .card-icon { background-color: var(--purple-color); color: white; }
+        
+        .card-manual { border-color: #fd7e14; }
+        .card-manual .card-icon { color: #fd7e14; background-color: rgba(253, 126, 20, 0.1); }
+        .card-manual:hover .card-icon { background-color: #fd7e14; color: white; }
+
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding: 20px;
+            color: var(--secondary-color);
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div style="display: flex; justify-content: flex-end; align-items: center; padding: 10px 0;">
-             <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
-             <a href="/logout" style="text-decoration: none; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+    <nav class="navbar">
+        <a href="/" class="brand">
+            <i class="fas fa-barcode"></i> Hệ Thống Quét Hàng
+        </a>
+        <div class="user-info">
+            <span class="user-name"><i class="fas fa-user-circle"></i> Xin chào, {{ session.get('user') }}</span>
+            <a href="/logout" class="btn-logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
         </div>
-        <div class="header">
-            <h1>Hệ Thống Quét Hàng</h1>
-            <p>Chào mừng bạn đến với ứng dụng.</p>
+    </nav>
+
+    <div class="container">
+        <div class="hero">
+            <h1>Dashboard Quản Lý</h1>
+            <p>Chọn chức năng bên dưới để bắt đầu làm việc</p>
         </div>
 
-        <div class="menu">
+        <div class="dashboard-grid">
             {% if session.get('role') in ['admin', 'scanner'] %}
-            <a href="/scan">Scan Hàng</a>
+            <a href="/scan" class="card card-scan">
+                <div class="card-icon"><i class="fas fa-qrcode"></i></div>
+                <h3>Scan Hàng</h3>
+                <p>Quét mã vạch và đóng Pallet</p>
+            </a>
             {% endif %}
-            <a href="/">Trang Chủ</a>
+
             {% if session.get('role') in ['admin', 'printer'] %}
-            <a href="/add-product">Tạo nhãn thủ công</a>
-            <a href="/stats">Thống Kê</a>
-            <a href="/print-label">In Tem</a>
+            <a href="/stats" class="card card-stats">
+                <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
+                <h3>Thống Kê</h3>
+                <p>Xem báo cáo tiến độ và hàng tồn</p>
+            </a>
+
+            <a href="/print-label" class="card card-print">
+                <div class="card-icon"><i class="fas fa-print"></i></div>
+                <h3>In Tem Pallet</h3>
+                <p>In tem lớn cho Pallet hoàn chỉnh</p>
+            </a>
+            
+            <a href="/add-product" class="card card-manual">
+                <div class="card-icon"><i class="fas fa-keyboard"></i></div>
+                <h3>Tạo Nhãn Thủ Công</h3>
+                <p>Nhập liệu bằng tay khi không có máy quét</p>
+            </a>
             {% endif %}
-            <a href="/print-small-label" style="background-color: #17a2b8; color: white; border: none;">In Tem Nhỏ (Tag)</a>
+
+            <a href="/print-small-label" class="card card-tag">
+                <div class="card-icon"><i class="fas fa-tags"></i></div>
+                <h3>In Tem Nhỏ (Tag)</h3>
+                <p>In nhãn phụ cho từng thùng/item</p>
+            </a>
+
             {% if session.get('role') == 'admin' %}
-            <a href="/users" style="background-color: #6f42c1; color: white; border: none;">Quản lý người dùng</a>
+            <a href="/users" class="card card-users">
+                <div class="card-icon"><i class="fas fa-users-cog"></i></div>
+                <h3>Quản Lý Người Dùng</h3>
+                <p>Thêm, sửa, xóa tài khoản hệ thống</p>
+            </a>
             {% endif %}
         </div>
     </div>
+
+    <footer>
+        &copy; 2025 Hệ Thống Quét Hàng Nội Bộ. All rights reserved.
+    </footer>
 </body>
 </html>

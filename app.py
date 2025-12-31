@@ -326,18 +326,34 @@ def bulk_update():
     job_type = data.get('job_type', '')
     pallet_no = data.get('pallet_no', '')
     pallet_type = data.get('pallet_type', '')
+    quantity = data.get('quantity')
 
     try:
-        # Cập nhật tất cả các item chưa có pallet của SKU này vào Pallet hiện tại
-        update_query = text("""
-            UPDATE scanfile 
-            SET pallet = :pallet, pallet_type = :pallet_type 
-            WHERE sku = :sku AND jobno_type = :job_type AND (pallet IS NULL OR pallet = '')
-        """)
-        result = db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'sku': sku, 'job_type': job_type})
+        count = 0
+        # Nếu có số lượng cụ thể
+        if quantity:
+            qty = int(quantity)
+            # Lấy danh sách ID cần update (giới hạn theo số lượng)
+            select_query = text("SELECT id FROM scanfile WHERE sku = :sku AND jobno_type = :job_type AND (pallet IS NULL OR pallet = '') LIMIT :limit")
+            ids_res = db.session.execute(select_query, {'sku': sku, 'job_type': job_type, 'limit': qty})
+            ids = [row[0] for row in ids_res]
+            
+            if not ids:
+                 return jsonify({'success': False, 'message': 'Không còn hàng khả dụng để cập nhật'})
+
+            # Update các ID đã chọn
+            update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type WHERE id IN :ids")
+            update_query = update_query.bindparams(bindparam('ids', expanding=True))
+            db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'ids': ids})
+            count = len(ids)
+        else:
+            # Cập nhật tất cả (Logic cũ)
+            update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type WHERE sku = :sku AND jobno_type = :job_type AND (pallet IS NULL OR pallet = '')")
+            result = db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'sku': sku, 'job_type': job_type})
+            count = result.rowcount
+
         db.session.commit()
-        
-        return jsonify({'success': True, 'message': f'Đã cập nhật {result.rowcount} thùng SKU {sku} vào Pallet {pallet_no}.', 'count': result.rowcount, 'sku': sku})
+        return jsonify({'success': True, 'message': f'Đã cập nhật {count} thùng SKU {sku} vào Pallet {pallet_no}.', 'count': count, 'sku': sku})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})

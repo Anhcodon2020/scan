@@ -752,18 +752,30 @@
                             // Hiển thị xác nhận
                             return Swal.fire({
                                 title: 'Scan Hàng Loạt',
-                                html: `Tìm thấy SKU: <b>${data.sku}</b><br>Số lượng còn lại: <b>${data.count}</b><br><br>Bạn có muốn scan tất cả vào Pallet <b>${palletNo}</b> (${palletType})?`,
-                                icon: 'question',
+                                html: `Tìm thấy SKU: <b>${data.sku}</b><br>Số lượng còn lại: <b>${data.count}</b><br>Nhập số lượng muốn scan vào Pallet <b>${palletNo}</b>:`,
+                                input: 'number',
+                                inputValue: data.count,
+                                inputAttributes: {
+                                    min: 1,
+                                    max: data.count,
+                                    step: 1
+                                },
                                 showCancelButton: true,
-                                confirmButtonText: 'Đồng ý Scan Hết',
-                                cancelButtonText: 'Hủy'
+                                confirmButtonText: 'Xác nhận',
+                                cancelButtonText: 'Hủy',
+                                preConfirm: (qty) => {
+                                    if (!qty || qty < 1 || qty > data.count) {
+                                        Swal.showValidationMessage(`Số lượng phải từ 1 đến ${data.count}`);
+                                    }
+                                    return qty;
+                                }
                             }).then((result) => {
                                 if (result.isConfirmed) {
                                     // Gọi API update hàng loạt
                                     return fetch('/api/bulk_update', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ sku: data.sku, job_type: jobType, pallet_no: palletNo, pallet_type: palletType })
+                                        body: JSON.stringify({ sku: data.sku, job_type: jobType, pallet_no: palletNo, pallet_type: palletType, quantity: result.value })
                                     }).then(r => r.json());
                                 } else {
                                     return { cancelled: true };
