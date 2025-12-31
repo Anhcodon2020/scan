@@ -258,13 +258,33 @@ def delete_scan():
     job_type = data.get('job_type', '')
     pallet = data.get('pallet', '')
     sku = data.get('sku', '')
+    quantity = data.get('quantity')
 
     try:
-        # Xóa pallet (set null) cho các item thuộc job, pallet và sku này
+        # Nếu có số lượng cụ thể
+        if quantity is not None and str(quantity).strip() != '':
+            qty = int(quantity)
+            if qty > 0:
+                # Lấy danh sách ID cần xóa (giới hạn theo số lượng)
+                select_query = text("SELECT id FROM scanfile WHERE jobno_type = :job_type AND pallet = :pallet AND sku = :sku LIMIT :limit")
+                ids_res = db.session.execute(select_query, {'job_type': job_type, 'pallet': pallet, 'sku': sku, 'limit': qty})
+                ids = [row[0] for row in ids_res]
+                
+                if not ids:
+                    return jsonify({'success': False, 'message': 'Không tìm thấy dữ liệu để xóa'})
+
+                # Xóa (update về null) các ID này
+                update_query = text("UPDATE scanfile SET pallet = NULL, pallet_type = NULL WHERE id IN :ids")
+                update_query = update_query.bindparams(bindparam('ids', expanding=True))
+                db.session.execute(update_query, {'ids': ids})
+                db.session.commit()
+                return jsonify({'success': True, 'message': f'Đã xóa {len(ids)} thùng.'})
+        
+        # Mặc định: Xóa hết nếu không nhập số lượng
         query = text("UPDATE scanfile SET pallet = NULL, pallet_type = NULL WHERE jobno_type = :job_type AND pallet = :pallet AND sku = :sku")
         db.session.execute(query, {'job_type': job_type, 'pallet': pallet, 'sku': sku})
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'message': 'Đã xóa tất cả thùng của SKU này.'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
@@ -695,6 +715,47 @@ def get_small_label_data():
         return jsonify({'success': True, 'items': items})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/stats')
+@login_required
+def stats_page():
+    try:
+        # Query: Đếm số lượng pallet duy nhất (DISTINCT pallet) theo từng loại và job
+        # Chỉ lấy những dòng đã có pallet (không null, không rỗng)
+        query = text("""
+            SELECT jobno, pallet_type, COUNT(DISTINCT pallet), COUNT(id)
+            FROM scanfile
+            WHERE pallet IS NOT NULL AND pallet != ''
+            GROUP BY jobno, pallet_type
+            ORDER BY jobno
+        """)
+        result = db.session.execute(query)
+        
+        stats = {}
+        for row in result:
+            job = row[0]
+            p_type = row[1]
+            pallet_count = row[2]
+            sscc_count = row[3]
+            
+            if not job: continue
+            
+            if job not in stats:
+                stats[job] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0}
+            
+            # Nếu là loose (Loose Carton) thì đếm số SSCC (thùng), ngược lại đếm số Pallet
+            if p_type == 'loose' or p_type == 'loosecarton':
+                count = sscc_count
+            else:
+                count = pallet_count
+
+            if p_type in stats[job]:
+                stats[job][p_type] += count
+                stats[job]['total'] += count
+
+        return render_template('statistics.html', stats=stats)
+    except Exception as e:
+        return f"Lỗi: {str(e)}"
 
 if __name__ == '__main__':
     app.run(debug=True)

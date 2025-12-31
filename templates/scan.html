@@ -25,7 +25,7 @@
 
         .scan-list { margin-top: 10px; }
         .scan-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-        .scan-item:first-child { background-color: #d4edda; font-weight: bold; } /* Item mới nhất màu xanh */
+        .scan-item:last-child { font-weight: bold; } /* Item mới nhất */
         
         .btn-back { display: inline-block; margin-bottom: 15px; text-decoration: none; color: #666; font-size: 16px; padding: 5px 0; }
         
@@ -117,6 +117,10 @@
             Đã scan : <span id="count">0</span> | Chờ xử lý: <span id="queueCount" style="color: orange; font-weight: bold;">0</span><br>
             <strong>Tổng Pallet <span id="lblPallet"></span>: <span id="palletTotal" style="color: #007bff; font-size: 1.2em;">0</span></strong>
             <div id="palletDetails" style="font-size: 0.9em; color: #555; margin-top: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #007bff; display: none; max-height: 200px; overflow-y: auto;"></div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button id="btnClearQueue" style="flex: 1; padding: 12px; background-color: #dc3545; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold;">🚫 Xóa Hàng Đợi</button>
+            <button onclick="document.getElementById('scanList').innerHTML = ''" style="flex: 1; padding: 12px; background-color: #6c757d; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold;">🗑️ Xóa List</button>
         </div>
         <div class="scan-list" id="scanList">
             <!-- Kết quả quét sẽ hiện ở đây -->
@@ -345,33 +349,55 @@
         // Hàm xóa scan
         function deleteScan(pallet, sku) {
             Swal.fire({
-                title: 'Xác nhận xóa?',
-                text: `Bạn có chắc muốn xóa SKU ${sku} khỏi Pallet ${pallet}?`,
-                icon: 'warning',
+                title: 'Xóa SKU ' + sku,
+                text: `Nhập số lượng thùng muốn xóa khỏi Pallet ${pallet} (Để trống để xóa HẾT):`,
+                input: 'number',
+                inputAttributes: {
+                    min: 1,
+                    step: 1,
+                    placeholder: 'Nhập số lượng...'
+                },
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
                 cancelButtonColor: '#3085d6',
                 confirmButtonText: 'Xóa',
-                cancelButtonText: 'Hủy'
-            }).then((result) => {
-                if (result.isConfirmed) {
+                cancelButtonText: 'Hủy',
+                showLoaderOnConfirm: true,
+                preConfirm: (quantity) => {
                     const type = jobTypeSelect.value;
-                    fetch('/api/delete_scan', {
+                    return fetch('/api/delete_scan', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({job_type: type, pallet: pallet, sku: sku})
+                        body: JSON.stringify({
+                            job_type: type, 
+                            pallet: pallet, 
+                            sku: sku,
+                            quantity: quantity // Gửi số lượng (có thể rỗng)
+                        })
                     })
-                    .then(r => r.json())
-                    .then(data => {
-                        if(data.success) {
-                            fetchJobStats();
-                            fetchHistory();
-                            fetchPallets(); 
-                            Swal.fire('Đã xóa!', 'SKU đã được xóa khỏi Pallet.', 'success');
-                        } else {
-                            Swal.fire('Lỗi', data.message, 'error');
-                        }
+                    .then(response => {
+                        if (!response.ok) throw new Error(response.statusText);
+                        return response.json();
+                    })
+                    .catch(error => {
+                        Swal.showValidationMessage(`Request failed: ${error}`);
                     });
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    if (result.value.success) {
+                        fetchJobStats();
+                        fetchHistory();
+                        fetchPallets(); 
+                        // Cập nhật chi tiết pallet nếu đang xem đúng pallet đó
+                        if(palletSelect.value == pallet) {
+                             fetchPalletDetails();
+                        }
+                        Swal.fire('Đã xóa!', result.value.message, 'success');
+                    } else {
+                        Swal.fire('Lỗi', result.value.message, 'error');
+                    }
                 }
             });
         }
@@ -686,6 +712,12 @@
             }
         }
 
+        // Xử lý nút Clear Queue
+        document.getElementById('btnClearQueue').addEventListener('click', () => {
+            scanQueue = []; // Xóa hàng đợi
+            document.getElementById('queueCount').innerText = 0; // Cập nhật hiển thị
+        });
+
         function processScanQueue() {
             if (isQueueRunning || scanQueue.length === 0) return;
 
@@ -732,7 +764,11 @@
                         // fetchHistory(); // Tạm tắt để giảm tải server và tăng tốc độ scan
                         fetchPalletDetails(data.sku); // Cập nhật lại chi tiết pallet vừa quét
 
-                        item.innerHTML = `<span>${data.sku}</span> <span style="color:green; font-weight:bold">OK</span>`;
+                        item.innerHTML = `
+                            <div style="display:flex; align-items:center; justify-content:space-between; width:100%">
+                                <span>${data.sku} <span style="color:green; font-weight:bold">OK</span></span>
+                                <button onclick="deleteScan('${palletNo}', '${data.sku}')" style="background:#dc3545; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px; font-weight:bold;">Xóa</button>
+                            </div>`;
                         item.style.backgroundColor = '#d4edda';
                     } else {
                         // Phân loại lỗi để phát âm thanh
@@ -745,10 +781,21 @@
                             playSound('error'); // Lỗi chung
                         }
 
-                        item.innerHTML = `<span>${code}</span> <span style="color:red; font-weight:bold">${data.message}</span>`;
+                        item.innerHTML = `
+                            <div style="display:flex; align-items:center; justify-content:space-between; width:100%">
+                                <span>${code} <span style="color:red; font-weight:bold">${data.message}</span></span>
+                                <button onclick="this.closest('.scan-item').remove()" style="background:#6c757d; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px; font-weight:bold;">X</button>
+                            </div>`;
                         item.style.backgroundColor = '#f8d7da';
                     }
-                    list.prepend(item);
+                    list.appendChild(item);
+
+                    // Giới hạn hiển thị 50 item gần nhất để tránh lag
+                    while (list.children.length > 50) {
+                        list.removeChild(list.firstChild);
+                    }
+
+                    item.scrollIntoView({ behavior: 'smooth', block: 'end' });
                 })
                 .catch(err => {
                     playSound('error');
