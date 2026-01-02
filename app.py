@@ -1,40 +1,105 @@
 import os
+from dotenv import load_dotenv
 import ssl
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, bindparam
+
+# Tải biến môi trường từ file .env trước khi import Config
+load_dotenv()
 from config import Config
+
+
 app = Flask(__name__)
 app.config.from_object(Config)
-# Cấu hình Database
-# Lấy URL từ biến môi trường DATABASE_URL, nếu không có thì dùng SQLite local để test
-db_url = os.environ.get('DATABASE_URL', 'sqlite:///local.db')
-# Fix lỗi tương thích: SQLAlchemy yêu cầu 'postgresql://', nhưng một số dịch vụ trả về 'postgres://'
-if db_url and db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-# Tự động chuyển đổi mysql:// thành mysql+pymysql:// để sử dụng driver pymysql
-if db_url and db_url.startswith("mysql://"):
-    db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
-    # Fix lỗi: pymysql không hỗ trợ tham số 'ssl-mode' từ chuỗi kết nối Aiven
+
+# --- CẤU HÌNH KẾT NỐI DATABASE (Aiven MySQL & SQLite) ---
+db_url = app.config.get('SQLALCHEMY_DATABASE_URI')
+
+# Nếu không có biến môi trường (None), mặc định dùng SQLite local để tránh lỗi crash
+if not db_url:
+    db_url = 'sqlite:///local.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+
+# Xử lý SSL và Pooling cho Aiven (MySQL)
+if db_url and 'mysql' in db_url:
+    # Loại bỏ tham số ssl-mode cũ nếu có để tránh xung đột
     if "ssl-mode=REQUIRED" in db_url:
         db_url = db_url.replace("?ssl-mode=REQUIRED", "").replace("&ssl-mode=REQUIRED", "")
-        # Thêm cấu hình SSL thông qua connect_args
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            "connect_args": {
-                "ssl": {
-                    "check_hostname": False,
-                    "verify_mode": ssl.CERT_NONE
-                }
-            }
-        }
+    
+    # Tạo SSL Context bỏ qua xác thực (Self-signed/Aiven)
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
 
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = os.environ.get('SECRET_KEY', 'kln_secret_key_change_me') # Key bảo mật cho session
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        "connect_args": {
+            "ssl": ssl_ctx
+        },
+        "pool_recycle": 280,  # Refresh connection trước 300s (timeout của Aiven)
+        "pool_pre_ping": True # Auto reconnect nếu mất kết nối
+    }
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+
 db = SQLAlchemy(app)
 
+# --- KHỞI TẠO DB LOCAL (Tự động tạo bảng nếu dùng SQLite) ---
+def init_local_db():
+    # Chỉ chạy khi dùng SQLite (local)
+    if 'sqlite' in (app.config.get('SQLALCHEMY_DATABASE_URI') or ''):
+        with app.app_context():
+            try:
+                # Tạo bảng users
+                db.session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT NOT NULL UNIQUE,
+                        password TEXT NOT NULL,
+                        role TEXT NOT NULL
+                    )
+                """))
+                # Tạo bảng logs
+                db.session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT, action TEXT, message TEXT, created_at TIMESTAMP, is_read INTEGER DEFAULT 0
+                    )
+                """))
+                # Tạo bảng scanfile
+                db.session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS scanfile (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, jobno TEXT, jobno_type TEXT, pallet TEXT, pallet_type TEXT, sku TEXT, sscc TEXT, jobscan TEXT, tag_label TEXT, time_scan TIMESTAMP, userscan TEXT
+                    )
+                """))
+                # Tạo bảng masterdata
+                db.session.execute(text("CREATE TABLE IF NOT EXISTS masterdata (sku TEXT PRIMARY KEY, refix TEXT, weight REAL)"))
+                
+                # Tạo admin mặc định (User: admin / Pass: 123456)
+                if not db.session.execute(text("SELECT id FROM users WHERE username = 'admin'")).fetchone():
+                    db.session.execute(text("INSERT INTO users (username, password, role) VALUES ('admin', '123456', 'admin')"))
+                
+                db.session.commit()
+            except Exception as e:
+                print(f"Lỗi khởi tạo DB Local: {e}")
+
+init_local_db()
+
+@app.route("/health")
+def health_check():
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify({
+            "status": "healthy",
+            "database": "connected"
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e)
+        }), 500
 
 
 # --- DECORATOR KIỂM TRA ĐĂNG NHẬP ---
@@ -62,6 +127,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+        remember = request.form.get('remember')
         
         try:
             # Query bảng user (giả định cột: username, password, role)
@@ -72,12 +138,11 @@ def login():
                 session['user'] = user[0]
                 session['role'] = user[2]
                 
-                if user[2] == 'scanner':
-                    return redirect(url_for('scan_page'))
-                elif user[2] == 'printer':
-                    return redirect(url_for('print_label_page'))
-                else: # admin
-                    return redirect(url_for('home'))
+                if remember:
+                    session.permanent = True
+                
+                # Chuyển hướng tất cả về trang chủ để thấy menu và nút Đổi mật khẩu
+                return redirect(url_for('home'))
             else:
                 return render_template('login.html', error="Sai tên đăng nhập hoặc mật khẩu")
         except Exception as e:
@@ -90,6 +155,41 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        old_password = request.form.get('old_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+
+        if not new_password or not old_password:
+             return render_template('change_password.html', error="Vui lòng nhập đầy đủ thông tin")
+
+        if new_password != confirm_password:
+             return render_template('change_password.html', error="Mật khẩu xác nhận không khớp")
+
+        username = session.get('user')
+        
+        try:
+            # Lấy mật khẩu hiện tại từ DB để kiểm tra
+            query = text("SELECT password FROM users WHERE username = :username")
+            current_pw_row = db.session.execute(query, {'username': username}).fetchone()
+            
+            if current_pw_row and current_pw_row[0] == old_password:
+                # Cập nhật mật khẩu mới
+                update_query = text("UPDATE users SET password = :password WHERE username = :username")
+                db.session.execute(update_query, {'password': new_password, 'username': username})
+                db.session.commit()
+                return render_template('change_password.html', success="Đổi mật khẩu thành công!")
+            else:
+                return render_template('change_password.html', error="Mật khẩu cũ không đúng")
+        except Exception as e:
+            db.session.rollback()
+            return render_template('change_password.html', error=f"Lỗi hệ thống: {str(e)}")
+
+    return render_template('change_password.html')
+
 @app.route('/')
 @login_required
 def home():
@@ -97,8 +197,6 @@ def home():
     # Bỏ redirect scanner để họ có thể thấy menu chọn chức năng (Scan hoặc In Tem Nhỏ)
     # if session.get('role') == 'scanner':
     #    return redirect(url_for('scan_page'))
-    if session.get('role') == 'printer':
-        return redirect(url_for('print_label_page'))
     # Render trang home.html
     return render_template('home.html')
 
@@ -201,8 +299,15 @@ def process_scan():
         if scan_res:
             # 3. Tìm thấy -> Cập nhật Pallet (Ghi nhận quét thành công)
             row_id = scan_res[0]
-            update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type WHERE id = :id")
-            db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'id': row_id})
+            current_user = session.get('user')
+            update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type, userscan = :userscan, time_scan = :time_scan WHERE id = :id")
+            db.session.execute(update_query, {
+                'pallet': pallet_no, 
+                'pallet_type': pallet_type, 
+                'userscan': current_user,
+                'time_scan': datetime.now(),
+                'id': row_id
+            })
             db.session.commit()
 
             # Đếm lại tổng số lượng trên Pallet này để hiển thị
@@ -238,7 +343,8 @@ def get_history():
     
     try:
         # Lấy danh sách SKU đã có pallet thuộc job_type, group by Pallet, SKU và count SSCC
-        query = text("SELECT pallet, sku, COUNT(sscc) as qty FROM scanfile WHERE jobno_type = :job_type AND (pallet IS NOT NULL AND pallet != '') GROUP BY pallet, sku ORDER BY pallet DESC, sku ASC")
+        # Thêm MAX(userscan) để lấy tên người thực hiện
+        query = text("SELECT pallet, sku, COUNT(sscc) as qty, MAX(userscan) FROM scanfile WHERE jobno_type = :job_type AND (pallet IS NOT NULL AND pallet != '') GROUP BY pallet, sku ORDER BY pallet DESC, sku ASC")
         result = db.session.execute(query, {'job_type': job_type})
         
         history = []
@@ -246,7 +352,8 @@ def get_history():
             history.append({
                 'pallet': row[0],
                 'sku': row[1],
-                'qty': row[2]
+                'qty': row[2],
+                'userscan': row[3] if row[3] else ''
             })
         return jsonify({'success': True, 'history': history})
     except Exception as e:
@@ -506,9 +613,16 @@ def manual_update():
 
         # Cập nhật pallet, pallet_type và thời gian
         # Sử dụng bindparam với expanding=True để xử lý danh sách ID an toàn cho mệnh đề IN
-        update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type, time_scan = :time_scan WHERE id IN :ids")
+        current_user = session.get('user')
+        update_query = text("UPDATE scanfile SET pallet = :pallet, pallet_type = :pallet_type, userscan = :userscan, time_scan = :time_scan WHERE id IN :ids")
         update_query = update_query.bindparams(bindparam('ids', expanding=True))
-        db.session.execute(update_query, {'pallet': pallet_no, 'pallet_type': pallet_type, 'time_scan': datetime.now(), 'ids': list(ids)})
+        db.session.execute(update_query, {
+            'pallet': pallet_no, 
+            'pallet_type': pallet_type, 
+            'userscan': current_user,
+            'time_scan': datetime.now(), 
+            'ids': list(ids)
+        })
         db.session.commit()
 
         return jsonify({'success': True, 'message': f'Đã cập nhật {len(ids)} thùng vào Pallet {pallet_no}'})
@@ -547,7 +661,8 @@ def get_print_data():
                 COUNT(s.id) as qty, 
                 MAX(s.tag_label) as tag_label,
                 MAX(m.weight) as sku_weight,
-                s.jobscan
+                s.jobscan,
+                MAX(s.userscan) as userscan
                             
             FROM scanfile s
             LEFT JOIN masterdata m ON s.sku = m.sku
@@ -572,7 +687,8 @@ def get_print_data():
                 # Lấy weight, nếu null (không tìm thấy trong masterdata) thì trả về 0
                 'sku_weight': float(row[5]) if row[5] is not None else 0,
                 # Lấy pallet_type, nếu null (không tìm thấy trong masterdata) thì trả về '
-                'jobscan':row[6]
+                'jobscan': row[6],
+                'userscan': row[7] if row[7] else ''
                 
             })
 
@@ -748,7 +864,7 @@ def mark_read():
 
 @app.route('/print-small-label')
 @login_required
-@role_required(['admin', 'printer', 'scanner'])
+@role_required(['admin', 'printer'])
 def print_small_label_page():
     # Lấy danh sách jobno_type
     job_types = []
@@ -847,9 +963,59 @@ def stats_page():
         # Lưu key là tuple (jobno, jobno_type)
         remain_stats = {(row[0], row[1]): row[2] for row in remain_result}
 
-        return render_template('statistics.html', stats=stats, remain_stats=remain_stats, grand_total=grand_total)
+        # Thống kê năng suất theo User (User Stats)
+        user_query = text("""
+            SELECT userscan, COUNT(id) 
+            FROM scanfile 
+            WHERE userscan IS NOT NULL AND userscan != ''
+            GROUP BY userscan
+        """)
+        user_stats = db.session.execute(user_query).fetchall()
+
+        return render_template('statistics.html', stats=stats, remain_stats=remain_stats, grand_total=grand_total, user_stats=user_stats)
     except Exception as e:
         return f"Lỗi: {str(e)}"
+
+# --- API THỐNG KÊ NĂNG SUẤT THEO NGÀY ---
+@app.route('/api/user_stats_by_date', methods=['POST'])
+@login_required
+@role_required(['admin'])
+def user_stats_by_date():
+    data = request.get_json()
+    # Hỗ trợ cả lọc theo ngày đơn lẻ hoặc khoảng thời gian
+    date_str = data.get('date')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    try:
+        if start_date and end_date:
+            # Lọc theo khoảng thời gian (từ ngày... đến ngày...)
+            query = text("""
+                SELECT userscan, COUNT(id) as qty
+                FROM scanfile
+                WHERE userscan IS NOT NULL AND userscan != '' 
+                AND DATE(time_scan) >= :start AND DATE(time_scan) <= :end
+                GROUP BY userscan
+                ORDER BY qty DESC
+            """)
+            result = db.session.execute(query, {'start': start_date, 'end': end_date})
+        elif date_str:
+            # Lọc theo một ngày cụ thể (Logic cũ)
+            query = text("""
+                SELECT userscan, COUNT(id) as qty
+                FROM scanfile
+                WHERE userscan IS NOT NULL AND userscan != '' AND DATE(time_scan) = :date
+                GROUP BY userscan
+                ORDER BY qty DESC
+            """)
+            result = db.session.execute(query, {'date': date_str})
+        else:
+            return jsonify({'success': False, 'message': 'Vui lòng chọn ngày hoặc khoảng thời gian'})
+
+        stats = [{'username': row[0], 'qty': row[1]} for row in result]
+        return jsonify({'success': True, 'stats': stats})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True)

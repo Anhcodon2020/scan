@@ -77,6 +77,22 @@
             color: white;
         }
 
+        .btn-password {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+            border: 1px solid var(--primary-color);
+            padding: 5px 12px;
+            border-radius: 20px;
+            transition: all 0.3s;
+            margin-right: 10px;
+        }
+
+        .btn-password:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
         .container {
             max-width: 1000px;
             margin: 30px auto;
@@ -190,6 +206,7 @@
         </a>
         <div class="user-info">
             <span class="user-name"><i class="fas fa-user-circle"></i> Xin chào, {{ session.get('user') }}</span>
+            <a href="/change-password" class="btn-password"><i class="fas fa-key"></i> Đổi mật khẩu</a>
             <a href="/logout" class="btn-logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
         </div>
     </nav>
@@ -227,13 +244,13 @@
                 <h3>Tạo Nhãn Thủ Công</h3>
                 <p>Nhập liệu bằng tay khi không có máy quét</p>
             </a>
-            {% endif %}
 
             <a href="/print-small-label" class="card card-tag">
                 <div class="card-icon"><i class="fas fa-tags"></i></div>
                 <h3>In Tem Nhỏ (Tag)</h3>
                 <p>In nhãn phụ cho từng thùng/item</p>
             </a>
+            {% endif %}
 
             {% if session.get('role') == 'admin' %}
             <a href="/users" class="card card-users">
