@@ -85,9 +85,9 @@ def api_scan():
         return jsonify({'success': False, 'message': 'Thiếu thông tin Barcode hoặc Pallet'}), 400
 
     # 1. Kiểm tra Barcode có tồn tại trong MasterData không
-    # Logic: Cắt phải vị trí thứ 2 lấy 5 ký tự của barcode = refix trong masterdata
-    # Ví dụ: Barcode "XX12345YY" -> Lấy "12345" (từ index 2, độ dài 5)
-    refix_val = barcode[2:7]
+    # Logic: Lấy từ bên phải, bỏ qua 1 ký tự cuối (vị trí thứ 1 từ phải), lấy 5 ký tự trước đó
+    refix_val = barcode[-6:-1]
+    print(f"DEBUG: Barcode='{barcode}' -> Refix='{refix_val}'")
     master_item = MasterData.query.filter_by(refix=refix_val).first()
     
     if not master_item:
@@ -174,6 +174,37 @@ def job_stats_api():
         })
     except Exception:
         return jsonify({'success': False}), 500
+
+@app.route('/api/get_history', methods=['POST'])
+def get_history():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phiên đăng nhập hết hạn'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+
+    if not job_type:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin Job Type'}), 400
+
+    try:
+        results = db.session.query(
+            Scanfile.pallet,
+            Scanfile.sku,
+            func.count(Scanfile.sscc)
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(
+            Scanfile.pallet,
+            Scanfile.sku
+        ).all()
+
+        history = [{'pallet': r[0], 'sku': r[1], 'qty': r[2]} for r in results]
+        
+        return jsonify({'success': True, 'history': history})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/stats')
 def stats():

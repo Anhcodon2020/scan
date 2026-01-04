@@ -471,6 +471,16 @@
         fetchHistory();
         fetchPalletDetails(); // Gọi lần đầu khi load trang
 
+        // Tự động làm mới dữ liệu mỗi 10 giây (10000ms)
+        setInterval(() => {
+            if (!document.hidden) {
+                fetchHistory();
+                fetchJobStats();
+                // Cập nhật chi tiết pallet nếu đang có pallet được chọn
+                if (palletSelect.value) fetchPalletDetails();
+            }
+        }, 10000);
+
         let isScanning = false;
         // Thay thế isProcessing bằng hàng đợi
         let scanQueue = [];
