@@ -164,8 +164,16 @@
             <button class="btn-action" onclick="loadData()">Tải Dữ Liệu</button>
         </div>
 
-        <div id="stats" style="margin-bottom: 15px; font-weight: bold; color: #333;">
-            Tổng số Pallet: <span id="totalPallets">0</span> | Tổng SSCC: <span id="totalSSCC">0</span>
+        <div id="stats" style="margin-bottom: 15px; font-weight: bold; color: #333; background: #e9ecef; padding: 10px; border-radius: 5px;">
+            Tổng Pallet: <span id="totalPallets" style="color: #007bff;">0</span> |
+            Tổng SSCC: <span id="totalSSCC" style="color: #007bff;">0</span> |
+            Tổng KG: <span id="totalWeight" style="color: #007bff;">0.00</span><br>
+            <span style="font-size: 0.9em; color: #6c757d;">
+                (1.2m: <span id="count12">0</span> | 
+                1.6m: <span id="count16">0</span> | 
+                1.9m: <span id="count19">0</span> | 
+                Loose: <span id="countLoose">0</span>)
+            </span>
         </div>
 
         <table>
@@ -227,9 +235,6 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '<tr><td colspan="8">Đang tải...</td></tr>';
 
-            // Gọi API lấy dữ liệu in
-            // API cần trả về danh sách các item đã scan, bao gồm:
-            // pallet_no, pallet_type, sku, qty (số sscc), tag_label, sku_weight (nếu có)
             fetch('/api/get_print_data', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -238,7 +243,8 @@
             .then(r => r.json())
             .then(data => {
                 if(data.success) {
-                    processData(data.items);
+                    currentData = data.items; // Lưu dữ liệu gốc
+                    processAndDisplayData(currentData);
                 } else {
                     tbody.innerHTML = `<tr><td colspan="8" style="color:red">Lỗi: ${data.message}</td></tr>`;
                 }
@@ -248,7 +254,7 @@
             });
         }
 
-        function processData(items) {
+        function processAndDisplayData(items) {
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
             
@@ -257,7 +263,6 @@
             let totalSSCC = 0;
 
             items.forEach(item => {
-                // Chỉ lấy pallet <> null (đã được lọc ở backend hoặc lọc tại đây)
                 if (!item.pallet_no) return;
 
                 if (!pallets[item.pallet_no]) {
@@ -267,7 +272,7 @@
                         skus: [],
                         total_qty: 0,
                         tag_label: item.tag_label || '',
-                        gross_weight: 0,
+                        goods_weight: 0, // Trọng lượng hàng hóa
                         jobscan: item.jobscan || ''
                     };
                 }
@@ -279,23 +284,43 @@
 
                 pallets[item.pallet_no].skus.push({
                     sku: item.sku,
-                    qty: item.qty,
+                    qty: item.qty, // qty bây giờ là số lượng SSCC
                     weight: totalItemWeight,
                     tag_label: item.tag_label
                 });
 
                 pallets[item.pallet_no].total_qty += item.qty;
-                pallets[item.pallet_no].gross_weight += totalItemWeight;
+                pallets[item.pallet_no].goods_weight += totalItemWeight;
                 
                 // Cập nhật tag_label nếu có item nào trong pallet có note
                 if(item.tag_label) pallets[item.pallet_no].tag_label = item.tag_label;
+                if(item.jobscan) pallets[item.pallet_no].jobscan = item.jobscan;
 
                 totalSSCC += item.qty;
             });
 
             const palletKeys = Object.keys(pallets).sort();
+
+            // --- Cập nhật thống kê tổng quan ---
+            let totalWeight = 0;
+            const palletTypeCounts = { '1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0 };
+
+            palletKeys.forEach(key => {
+                const p = pallets[key];
+                const palletBaseWeight = PALLET_WEIGHTS[p.pallet_type] || 0;
+                totalWeight += (p.goods_weight + palletBaseWeight);
+                if (palletTypeCounts.hasOwnProperty(p.pallet_type)) {
+                    palletTypeCounts[p.pallet_type]++;
+                }
+            });
+            
             document.getElementById('totalPallets').innerText = palletKeys.length;
             document.getElementById('totalSSCC').innerText = totalSSCC;
+            document.getElementById('totalWeight').innerText = totalWeight.toFixed(2);
+            document.getElementById('count12').innerText = palletTypeCounts['1.2'];
+            document.getElementById('count16').innerText = palletTypeCounts['1.6'];
+            document.getElementById('count19').innerText = palletTypeCounts['1.9'];
+            document.getElementById('countLoose').innerText = palletTypeCounts['loose'];
 
             if (palletKeys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8">Không tìm thấy dữ liệu Pallet nào.</td></tr>';
@@ -307,7 +332,7 @@
                 
                 // Cộng trọng lượng vỏ Pallet
                 const palletBaseWeight = PALLET_WEIGHTS[p.pallet_type] || 0;
-                const finalWeight = p.gross_weight + palletBaseWeight;
+                const finalWeight = p.goods_weight + palletBaseWeight;
 
                 const skuList = p.skus.map(s => s.sku).join(', ');
                 const note = p.tag_label ? '<span style="color:red; font-weight:bold">TEM NHỎ</span>' : '';

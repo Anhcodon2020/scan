@@ -24,6 +24,7 @@ class Scanfile(db.Model):
     time_scan=db.Column(db.Date, nullable=False)
     pallet_type=db.Column(db.String(255), nullable=False)
     jobscan=db.Column(db.String(255), nullable=False)
-    userscan=db.Column(db.String(255), nullable=True)  # Thêm cột username nếu cần
+    userscan=db.Column(db.String(255), nullable=False)  # Thêm cột username nếu cần
+    finish=db.Column(db.String(255), nullable=False)
     def __repr__(self):
         return f'<Scanfile ID:{self.id} JobNo:{self.jobno}>'

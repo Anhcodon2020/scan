@@ -12,6 +12,8 @@ from extensions import db
 from models.users import User
 from models.scanfile import Scanfile
 from models.masterdata import MasterData
+from models.load import Load
+from models.log import Log
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -83,6 +85,16 @@ def api_scan():
 
     if not barcode or not pallet_no:
         return jsonify({'success': False, 'message': 'Thiếu thông tin Barcode hoặc Pallet'}), 400
+
+    # [MỚI] Kiểm tra xem pallet đã bị khóa chưa (dựa vào tag_label='COMPLETED')
+    is_locked = Scanfile.query.filter(
+        Scanfile.jobno_type == job_type,
+        Scanfile.pallet == pallet_no,
+        Scanfile.tag_label == 'COMPLETED'
+    ).first()
+    
+    if is_locked:
+        return jsonify({'success': False, 'message': f'Pallet {pallet_no} đã bị khóa (Hoàn thành). Không thể thêm hàng.'}), 400
 
     # 1. Kiểm tra Barcode có tồn tại trong MasterData không
     # Logic: Lấy từ bên phải, bỏ qua 1 ký tự cuối (vị trí thứ 1 từ phải), lấy 5 ký tự trước đó
@@ -206,6 +218,127 @@ def get_history():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/pallet_details', methods=['POST'])
+def pallet_details():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phiên đăng nhập hết hạn'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+
+    if not job_type or not pallet_no:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    try:
+        # Kiểm tra trạng thái khóa của Pallet (dựa vào tag_label='COMPLETED')
+        is_locked = Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet == pallet_no,
+            Scanfile.finish == 'COMPLETED'
+        ).first() is not None
+
+        # Lấy danh sách SKU và số lượng trong Pallet cụ thể
+        results = db.session.query(
+            Scanfile.sku,
+            func.count(Scanfile.id)
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet == pallet_no
+        ).group_by(Scanfile.sku).all()
+
+        skus = [{'sku': r[0], 'qty': r[1]} for r in results]
+        pallet_count = sum(item['qty'] for item in skus)
+        
+        return jsonify({'success': True, 'pallet_count': pallet_count, 'skus': skus, 'is_locked': is_locked})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/sku_details', methods=['POST'])
+def sku_details():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phiên đăng nhập hết hạn'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+    sku = data.get('sku')
+
+    if not job_type or not sku:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    try:
+        # Tìm xem SKU này đang nằm ở những Pallet nào
+        results = db.session.query(
+            Scanfile.pallet,
+            func.count(Scanfile.id)
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.sku == sku,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(Scanfile.pallet).all()
+
+        details = [{'pallet': r[0], 'qty': r[1]} for r in results]
+        
+        return jsonify({'success': True, 'details': details})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/finish_pallet', methods=['POST'])
+def finish_pallet():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phiên đăng nhập hết hạn'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+
+    if not job_type or not pallet_no:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    try:
+        # Kiểm tra pallet có hàng không (không khóa pallet trống)
+        count = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).count()
+        if count == 0:
+            return jsonify({'success': False, 'message': 'Pallet trống, không thể khóa'}), 400
+
+        # Kiểm tra xem Pallet này đã có trong bảng Load chưa (tránh trùng lặp)
+        if Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).first():
+             return jsonify({'success': False, 'message': 'Pallet này đã được báo xong trước đó.'}), 400
+
+        # Cập nhật finish thành 'COMPLETED' cho toàn bộ item trong pallet này
+        Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).update(
+            {'finish': 'COMPLETED'}, 
+            synchronize_session=False
+        )
+        
+        # Lưu thông tin vào bảng Load để nhân viên Printer biết
+        new_load = Load(
+            jobno_type=job_type,
+            pallet_no=pallet_no,
+            pallet_type=data.get('pallet_type', ''),
+            quantity=count,
+            created_by=session.get('user'),
+            status='PENDING' # Trạng thái mặc định là Chờ in
+        )
+        db.session.add(new_load)
+        
+        # Tạo Log thông báo cho Printer
+        new_log = Log(
+            username=session.get('user'),
+            action='FINISH_PALLET',
+            message=f"Đã báo xong Pallet {pallet_no} ({count} thùng)",
+            is_read=False
+        )
+        db.session.add(new_log)
+
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Đã khóa Pallet {pallet_no} và gửi yêu cầu in tem.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/stats')
 def stats():
     if 'user' not in session: return redirect(url_for('login'))
@@ -216,7 +349,15 @@ def stats():
 @app.route('/print-label')
 def print_label():
     if 'user' not in session: return redirect(url_for('login'))
-    return "<h3>Chức năng In Tem Pallet đang phát triển</h3><a href='/'>Quay lại</a>"
+    
+    # Lấy danh sách Job Type
+    job_types = []
+    try:
+        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).distinct().all() if r[0]]
+    except Exception:
+        pass
+
+    return render_template('print_label.html', job_types=job_types)
 
 @app.route('/users')
 def users_manage():
@@ -236,6 +377,98 @@ def health_check():
         return jsonify({'status': 'healthy', 'database': 'connected'}), 200
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
+
+@app.route('/api/get_print_data', methods=['POST'])
+def get_print_data():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    data = request.json
+    job_type = data.get('job_type')
+    
+    try:
+        # Group by pallet and SKU to get counts
+        results = db.session.query(
+            Scanfile.pallet,
+            Scanfile.pallet_type,
+            Scanfile.sku,
+            func.count(Scanfile.id).label('sscc_count'),
+            func.max(Scanfile.tag_label).label('tag_label'), # Get tag_label if any
+            func.max(Scanfile.jobscan).label('jobscan') # Get jobscan if any
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(
+            Scanfile.pallet,
+            Scanfile.pallet_type,
+            Scanfile.sku
+        ).all()
+        
+        items = []
+        for row in results:
+            # Also get weight from masterdata
+            master_item = MasterData.query.filter_by(sku=row.sku).first()
+            sku_weight = master_item.weight if master_item and master_item.weight else 0
+
+            items.append({
+                'pallet_no': row.pallet,
+                'pallet_type': row.pallet_type,
+                'sku': row.sku,
+                'qty': row.sscc_count, # This is now the count of cartons
+                'tag_label': row.tag_label,
+                'jobscan': row.jobscan,
+                'sku_weight': sku_weight # Add weight here
+            })
+            
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/update_jobscan', methods=['POST'])
+def update_jobscan():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    jobscan = data.get('jobscan')
+    
+    try:
+        Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).update(
+            {'jobscan': jobscan}, synchronize_session=False
+        )
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/get_sscc_data', methods=['POST'])
+def get_sscc_data():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    
+    try:
+        rows = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).all()
+        items = []
+        for r in rows:
+            items.append({
+                'id': r.id,
+                'sscc': r.sscc,
+                'barcode': r.barcode,
+                'sku': r.sku,
+                'qty': r.qty,
+                'master_delivery': r.master_delivery,
+                'ship_to': r.ship_to,
+                'master_add1': r.master_add1,
+                'master_add2': r.master_add2,
+                'master_add3': r.master_add3,
+                'master_add4': r.master_add4,
+                'tag_label': r.tag_label
+            })
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---
@@ -259,3 +492,26 @@ if __name__ == '__main__':
         print(f"Cảnh báo: PORT không hợp lệ, chuyển về mặc định {port}")
     
     app.run(host='0.0.0.0', port=port)
+
+@app.route('/api/get_logs')
+def get_logs():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    try:
+        logs = Log.query.order_by(Log.created_at.desc()).limit(20).all()
+        log_list = [{'id': l.id, 'username': l.username, 'message': l.message, 'created_at': l.created_at.strftime('%H:%M:%S %d/%m'), 'is_read': l.is_read} for l in logs]
+        return jsonify({'success': True, 'logs': log_list})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/mark_read', methods=['POST'])
+def mark_read():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    data = request.json
+    try:
+        log = Log.query.get(data.get('id'))
+        if log:
+            log.is_read = True
+            db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500

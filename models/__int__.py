@@ -7,3 +7,4 @@ from .scanfile import Scanfile
 from .masterdata import MasterData
 from .users import User
 from .log import Log
+from .load import Load

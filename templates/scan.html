@@ -308,6 +308,19 @@
                 if(data.success) {
                     document.getElementById('palletTotal').innerText = data.pallet_count;
                     
+                    // Hiển thị trạng thái khóa (Locked)
+                    const lblPallet = document.getElementById('lblPallet');
+                    const lblPalletDisplay = document.getElementById('lblPalletDisplay');
+                    const lockHtml = ' <i class="fas fa-lock" style="color: #dc3545; margin-left: 5px;" title="Đã khóa"></i>';
+
+                    if (data.is_locked) {
+                        lblPallet.innerHTML = pallet + lockHtml;
+                        if (lblPalletDisplay) lblPalletDisplay.innerHTML = pallet + lockHtml;
+                    } else {
+                        lblPallet.innerText = pallet;
+                        if (lblPalletDisplay) lblPalletDisplay.innerText = pallet;
+                    }
+                    
                     // Hiển thị danh sách SKU
                     if (data.skus.length > 0) {
                         let tableHtml = '<table style="width:100%; border-collapse: collapse; margin-top:5px; background:white;">';
