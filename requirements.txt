@@ -4,3 +4,4 @@ SQLAlchemy
 PyMySQL
 psycopg2-binary
 gunicorn
+python-dotenv
