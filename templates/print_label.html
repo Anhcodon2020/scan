@@ -335,7 +335,7 @@
                 const finalWeight = p.goods_weight + palletBaseWeight;
 
                 const skuList = p.skus.map(s => s.sku).join(', ');
-                const note = p.tag_label ? '<span style="color:red; font-weight:bold">TEM NHỎ</span>' : '';
+                const note = p.tag_label === 'Y' ? '<span style="color:red; font-weight:bold">TEM NHỎ</span>' : '';
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -487,7 +487,7 @@
                                 </div>
                                 <div class="sscc-cell">
                                     <strong>Customer</strong>
-                                    
+                                    <span>${item.master_st_company || '-'}</span>
                                 </div>
                                 
                                 <div class="sscc-cell">

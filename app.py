@@ -61,15 +61,47 @@ def scan():
     except Exception:
         pass # Bỏ qua lỗi nếu bảng chưa có dữ liệu
 
-    # Tạo danh sách Pallet cố định từ 1 đến 25
-    pallets = [{'no': i, 'label': f"{i}"} for i in range(1, 26)]
+    # Tạo danh sách Pallet 1-25, loại bỏ các pallet đã có jobscan (đã in)
+    used_pallets = set()
+    if job_types:
+        try:
+            rows = db.session.query(Scanfile.pallet).filter(
+                Scanfile.jobno_type == job_types[0],
+                Scanfile.jobscan != '',
+                Scanfile.jobscan != None
+            ).distinct().all()
+            used_pallets = {r[0] for r in rows}
+        except Exception:
+            pass
+
+    pallets = []
+    for i in range(1, 26):
+        if str(i) not in used_pallets:
+            pallets.append({'no': i, 'label': f"{i}"})
     
     return render_template('scan.html', job_types=job_types, available_pallets=pallets)
 
 @app.route('/api/get_pallets')
 def get_pallets():
-    # API trả về danh sách pallet 1-25 cho frontend (scan.html gọi hàm này)
-    pallets = [{'no': i, 'label': f"{i}"} for i in range(1, 26)]
+    job_type = request.args.get('job_type')
+    
+    used_pallets = set()
+    if job_type:
+        try:
+            rows = db.session.query(Scanfile.pallet).filter(
+                Scanfile.jobno_type == job_type,
+                Scanfile.jobscan != '',
+                Scanfile.jobscan != None
+            ).distinct().all()
+            used_pallets = {r[0] for r in rows}
+        except Exception:
+            pass
+
+    pallets = []
+    for i in range(1, 26):
+        if str(i) not in used_pallets:
+            pallets.append({'no': i, 'label': f"{i}"})
+            
     return jsonify({'success': True, 'pallets': pallets})
 
 @app.route('/api/scan', methods=['POST'])
@@ -86,11 +118,11 @@ def api_scan():
     if not barcode or not pallet_no:
         return jsonify({'success': False, 'message': 'Thiếu thông tin Barcode hoặc Pallet'}), 400
 
-    # [MỚI] Kiểm tra xem pallet đã bị khóa chưa (dựa vào tag_label='COMPLETED')
+    # [MỚI] Kiểm tra xem pallet đã bị khóa chưa (dựa vào finish='COMPLETED')
     is_locked = Scanfile.query.filter(
         Scanfile.jobno_type == job_type,
         Scanfile.pallet == pallet_no,
-        Scanfile.tag_label == 'COMPLETED'
+        Scanfile.finish == 'COMPLETED'
     ).first()
     
     if is_locked:
@@ -464,7 +496,10 @@ def get_sscc_data():
                 'master_add2': r.master_add2,
                 'master_add3': r.master_add3,
                 'master_add4': r.master_add4,
-                'tag_label': r.tag_label
+                'tag_label': r.tag_label,
+                'master_st_company': r.master_st_company,
+                'st_zip': r.st_zip,
+                'master_ctl': r.master_ctl
             })
         return jsonify({'success': True, 'items': items})
     except Exception as e:

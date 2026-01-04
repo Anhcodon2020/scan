@@ -7,6 +7,7 @@ load_dotenv()
 from app import app
 from extensions import db
 from models.users import User
+from models.load import Load
 
 def deploy():
     print("--- Đang khởi tạo Database trên Aiven ---")
