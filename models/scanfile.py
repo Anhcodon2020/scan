@@ -1,4 +1,4 @@
-from models import db
+from extensions import db
 
 class Scanfile(db.Model):
     __tablename__ = 'scanfile'
@@ -24,5 +24,6 @@ class Scanfile(db.Model):
     time_scan=db.Column(db.Date, nullable=False)
     pallet_type=db.Column(db.String(255), nullable=False)
     jobscan=db.Column(db.String(255), nullable=False)
+    userscan=db.Column(db.String(255), nullable=True)  # Thêm cột username nếu cần
     def __repr__(self):
         return f'<Scanfile ID:{self.id} JobNo:{self.jobno}>'

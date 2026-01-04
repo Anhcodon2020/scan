@@ -76,7 +76,7 @@
             background-color: var(--danger-color);
             color: white;
         }
-
+        
         .btn-password {
             color: var(--primary-color);
             text-decoration: none;
@@ -85,7 +85,7 @@
             padding: 5px 12px;
             border-radius: 20px;
             transition: all 0.3s;
-            margin-right: 10px;
+            margin-right: 5px;
         }
 
         .btn-password:hover {
@@ -178,18 +178,10 @@
         .card-print .card-icon { color: var(--warning-color); background-color: rgba(255, 193, 7, 0.1); }
         .card-print:hover .card-icon { background-color: var(--warning-color); color: white; }
 
-        .card-tag { border-color: var(--info-color); }
-        .card-tag .card-icon { color: var(--info-color); background-color: rgba(23, 162, 184, 0.1); }
-        .card-tag:hover .card-icon { background-color: var(--info-color); color: white; }
-
         .card-users { border-color: var(--purple-color); }
         .card-users .card-icon { color: var(--purple-color); background-color: rgba(111, 66, 193, 0.1); }
         .card-users:hover .card-icon { background-color: var(--purple-color); color: white; }
         
-        .card-manual { border-color: #fd7e14; }
-        .card-manual .card-icon { color: #fd7e14; background-color: rgba(253, 126, 20, 0.1); }
-        .card-manual:hover .card-icon { background-color: #fd7e14; color: white; }
-
         footer {
             text-align: center;
             margin-top: 50px;
@@ -218,6 +210,7 @@
         </div>
 
         <div class="dashboard-grid">
+            <!-- Chức năng Scan: Dành cho admin và scanner -->
             {% if session.get('role') in ['admin', 'scanner'] %}
             <a href="/scan" class="card card-scan">
                 <div class="card-icon"><i class="fas fa-qrcode"></i></div>
@@ -226,6 +219,7 @@
             </a>
             {% endif %}
 
+            <!-- Chức năng Thống kê & In ấn: Dành cho admin và printer -->
             {% if session.get('role') in ['admin', 'printer'] %}
             <a href="/stats" class="card card-stats">
                 <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
@@ -238,20 +232,9 @@
                 <h3>In Tem Pallet</h3>
                 <p>In tem lớn cho Pallet hoàn chỉnh</p>
             </a>
-            
-            <a href="/add-product" class="card card-manual">
-                <div class="card-icon"><i class="fas fa-keyboard"></i></div>
-                <h3>Tạo Nhãn Thủ Công</h3>
-                <p>Nhập liệu bằng tay khi không có máy quét</p>
-            </a>
-
-            <a href="/print-small-label" class="card card-tag">
-                <div class="card-icon"><i class="fas fa-tags"></i></div>
-                <h3>In Tem Nhỏ (Tag)</h3>
-                <p>In nhãn phụ cho từng thùng/item</p>
-            </a>
             {% endif %}
 
+            <!-- Chức năng Quản lý User: Chỉ dành cho admin -->
             {% if session.get('role') == 'admin' %}
             <a href="/users" class="card card-users">
                 <div class="card-icon"><i class="fas fa-users-cog"></i></div>

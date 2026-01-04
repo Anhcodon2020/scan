@@ -1,4 +1,4 @@
-from models import db
+from extensions import db
 
 class MasterData(db.Model):
     __tablename__ = 'masterdata'
