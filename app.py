@@ -1,6 +1,8 @@
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session, Response
 from sqlalchemy import text, func
 import os
+import csv
+import io
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -20,6 +22,9 @@ app.config.from_object(Config)
 
 # Khởi tạo database
 db.init_app(app)
+
+# Cache cục bộ cho MasterData để giảm query DB khi scan liên tục
+_refix_cache = {}
 
 @app.route('/')
 def index():
@@ -118,30 +123,29 @@ def api_scan():
     if not barcode or not pallet_no:
         return jsonify({'success': False, 'message': 'Thiếu thông tin Barcode hoặc Pallet'}), 400
 
-    # [MỚI] Kiểm tra xem pallet đã bị khóa chưa (dựa vào finish='COMPLETED')
-    is_locked = Scanfile.query.filter(
-        Scanfile.jobno_type == job_type,
-        Scanfile.pallet == pallet_no,
-        Scanfile.finish == 'COMPLETED'
-    ).first()
+    # [TỐI ƯU] Kiểm tra khóa bằng bảng Load (nhanh hơn quét bảng Scanfile lớn)
+    is_locked = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).first()
     
     if is_locked:
         return jsonify({'success': False, 'message': f'Pallet {pallet_no} đã bị khóa (Hoàn thành). Không thể thêm hàng.'}), 400
 
-    # 1. Kiểm tra Barcode có tồn tại trong MasterData không
+    # 1. Kiểm tra Barcode (Sử dụng Cache)
     # Logic: Lấy từ bên phải, bỏ qua 1 ký tự cuối (vị trí thứ 1 từ phải), lấy 5 ký tự trước đó
     refix_val = barcode[-6:-1]
-    print(f"DEBUG: Barcode='{barcode}' -> Refix='{refix_val}'")
-    master_item = MasterData.query.filter_by(refix=refix_val).first()
     
-    if not master_item:
-        return jsonify({'success': False, 'message': f'Refix {refix_val} (từ barcode {barcode}) không tồn tại trong hệ thống'}), 404
+    sku = _refix_cache.get(refix_val)
+    if not sku:
+        master_item = MasterData.query.filter_by(refix=refix_val).first()
+        if not master_item:
+            return jsonify({'success': False, 'message': f'Refix {refix_val} (từ barcode {barcode}) không tồn tại trong hệ thống'}), 404
+        sku = master_item.sku
+        _refix_cache[refix_val] = sku
 
     try:
         # 2. Cập nhật (Edit) record có sẵn trong Scanfile thay vì tạo mới
         # Tìm bản ghi khớp SKU, Job Type và chưa được scan (pallet là null hoặc rỗng)
         scan_entry = Scanfile.query.filter(
-            Scanfile.sku == master_item.sku,
+            Scanfile.sku == sku,
             Scanfile.jobno_type == job_type,
             (Scanfile.pallet == '') | (Scanfile.pallet == None)
         ).first()
@@ -157,7 +161,7 @@ def api_scan():
 
         db.session.commit()
 
-        return jsonify({'success': True, 'message': 'Scan thành công', 'sku': master_item.sku})
+        return jsonify({'success': True, 'message': 'Scan thành công', 'sku': sku})
 
     except Exception as e:
         db.session.rollback()
@@ -424,7 +428,13 @@ def get_print_data():
             Scanfile.sku,
             func.count(Scanfile.id).label('sscc_count'),
             func.max(Scanfile.tag_label).label('tag_label'), # Get tag_label if any
-            func.max(Scanfile.jobscan).label('jobscan') # Get jobscan if any
+            func.max(Scanfile.jobscan).label('jobscan'), # Get jobscan if any
+            func.max(Scanfile.ship_to).label('ship_to'),
+            func.max(Scanfile.master_add1).label('master_add1'),
+            func.max(Scanfile.master_add2).label('master_add2'),
+            func.max(Scanfile.master_add3).label('master_add3'),
+            func.max(Scanfile.master_add4).label('master_add4'),
+            func.max(Scanfile.master_delivery).label('master_delivery')
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
@@ -448,7 +458,13 @@ def get_print_data():
                 'qty': row.sscc_count, # This is now the count of cartons
                 'tag_label': row.tag_label,
                 'jobscan': row.jobscan,
-                'sku_weight': sku_weight # Add weight here
+                'sku_weight': sku_weight, # Add weight here
+                'ship_to': row.ship_to,
+                'master_add1': row.master_add1,
+                'master_add2': row.master_add2,
+                'master_add3': row.master_add3,
+                'master_add4': row.master_add4,
+                'master_delivery': row.master_delivery
             })
             
         return jsonify({'success': True, 'items': items})
@@ -486,24 +502,68 @@ def get_sscc_data():
         for r in rows:
             items.append({
                 'id': r.id,
+                'pallet': r.pallet,
                 'sscc': r.sscc,
                 'barcode': r.barcode,
                 'sku': r.sku,
                 'qty': r.qty,
+                'tag_label': r.tag_label,
                 'master_delivery': r.master_delivery,
                 'ship_to': r.ship_to,
                 'master_add1': r.master_add1,
                 'master_add2': r.master_add2,
                 'master_add3': r.master_add3,
                 'master_add4': r.master_add4,
-                'tag_label': r.tag_label,
-                'master_st_company': r.master_st_company,
                 'st_zip': r.st_zip,
                 'master_ctl': r.master_ctl
             })
         return jsonify({'success': True, 'items': items})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/export_pallet_data')
+def export_pallet_data():
+    if 'user' not in session: return redirect(url_for('login'))
+    job_type = request.args.get('job_type')
+    
+    try:
+        # Truy vấn dữ liệu tổng hợp theo Pallet
+        results = db.session.query(
+            Scanfile.pallet,
+            Scanfile.pallet_type,
+            Scanfile.sku,
+            func.count(Scanfile.id).label('sscc_count'),
+            func.max(Scanfile.tag_label).label('tag_label'),
+            func.max(Scanfile.jobscan).label('jobscan')
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(
+            Scanfile.pallet,
+            Scanfile.pallet_type,
+            Scanfile.sku
+        ).all()
+
+        # Tạo file CSV trong bộ nhớ
+        output = io.StringIO()
+        writer = csv.writer(output)
+        # Thêm BOM để Excel hiển thị đúng tiếng Việt/UTF-8
+        output.write('\ufeff') 
+        
+        writer.writerow(['Pallet No', 'Job Type', 'Pallet Type', 'SKU', 'Quantity', 'Weight (Est)', 'Tag Label', 'Job Scan'])
+
+        for row in results:
+            master_item = MasterData.query.filter_by(sku=row.sku).first()
+            sku_weight = master_item.weight if master_item and master_item.weight else 0
+            total_weight = sku_weight * row.sscc_count
+            
+            writer.writerow([row.pallet, job_type, row.pallet_type, row.sku, row.sscc_count, total_weight, row.tag_label, row.jobscan])
+            
+        output.seek(0)
+        return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=pallet_data_{job_type}.csv"})
+    except Exception as e:
+        return f"Lỗi: {str(e)}", 500
 
 if __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---
