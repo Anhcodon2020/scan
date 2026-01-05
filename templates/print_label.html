@@ -430,7 +430,7 @@
                     const printArea = document.getElementById('printArea');
                     printArea.innerHTML = '';
                     
-                    data.items.forEach(item => {
+                    data.items.forEach((item, index) => {
                         const div = document.createElement('div');
                         div.className = 'label-box';
                         div.style.pageBreakAfter = 'always'; // Ngắt trang sau mỗi tem
@@ -455,7 +455,7 @@
                             <div style="border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
                                 <strong>PO #:</strong> 
                                 <div style="font-size: 48px; font-weight: bold; margin-top: 5px;">${item.master_delivery || ''}</div>
-                                <strong>CTL #:</strong> ${item.master_ctl || ''}
+                                
                             </div>
                             <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
                                 <div style="width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;">
@@ -475,16 +475,22 @@
                                 </div>
                             </div>
 
-                            <div style="margin-top: auto; text-align: left;">
-                            <div style="font-size: 18px; margin-bottom: 5px; text-align: left;"><strong>SSCC:</strong> </div>    
-                            <svg class="barcode-sscc" 
-                                    jsbarcode-value="${item.sscc}" 
-                                    jsbarcode-format="CODE128" 
-                                    jsbarcode-width="2" 
-                                    jsbarcode-height="60" 
-                                    jsbarcode-displayValue="true"
-                                    jsbarcode-fontSize="14">
-                                </svg>
+                            <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end;">
+                                <div style="text-align: left;">
+                                    <div style="font-size: 18px; margin-bottom: 5px;"><strong>SSCC:</strong></div>
+                                    <svg class="barcode-sscc" 
+                                        jsbarcode-value="${item.sscc}" 
+                                        jsbarcode-format="CODE128" 
+                                        jsbarcode-width="2" 
+                                        jsbarcode-height="60" 
+                                        jsbarcode-displayValue="true"
+                                        jsbarcode-fontSize="14">
+                                    </svg>
+                                </div>
+                            </div>
+                            <div style="position: absolute; bottom: 10px; right: 10px; text-align: right;">
+                                <div style="font-size: 10px; font-weight: bold;">${index + 1}/${data.items.length}</div>
+                                <div style="font-size: 10px; font-weight: bold;">PALLET: ${item.pallet}</div>
                             </div>
                         `;
                         printArea.appendChild(div);
@@ -526,6 +532,7 @@
                             border: 2px solid #000; 
                             font-family: Arial, sans-serif;
                             display: flex; flex-direction: column;
+                            position: relative;
                         }
                     }
                 `;
