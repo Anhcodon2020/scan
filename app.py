@@ -389,7 +389,10 @@ def print_label():
     # Lấy danh sách Job Type
     job_types = []
     try:
-        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).distinct().all() if r[0]]
+        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).filter(
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).distinct().all() if r[0]]
     except Exception:
         pass
 
@@ -404,6 +407,14 @@ def users_manage():
 def change_password():
     if 'user' not in session: return redirect(url_for('login'))
     return render_template('change_password.html')
+
+@app.route('/notifications')
+def notifications():
+    if 'user' not in session: return redirect(url_for('login'))
+    page = request.args.get('page', 1, type=int)
+    per_page = 20 # Số lượng log trên mỗi trang
+    pagination = Log.query.order_by(Log.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    return render_template('notifications.html', pagination=pagination)
 
 @app.route('/healthz')
 def health_check():
@@ -421,51 +432,67 @@ def get_print_data():
     job_type = data.get('job_type')
     
     try:
-        # Group by pallet and SKU to get counts
-        results = db.session.query(
+        # Lấy chi tiết từng SKU trong mỗi pallet
+        sku_details_query = db.session.query(
             Scanfile.pallet,
-            Scanfile.pallet_type,
             Scanfile.sku,
             func.count(Scanfile.id).label('sscc_count'),
-            func.max(Scanfile.tag_label).label('tag_label'), # Get tag_label if any
-            func.max(Scanfile.jobscan).label('jobscan'), # Get jobscan if any
+            func.max(Scanfile.tag_label).label('tag_label'),
+            func.max(Scanfile.pallet_type).label('pallet_type'),
+            func.max(Scanfile.jobscan).label('jobscan'),
             func.max(Scanfile.ship_to).label('ship_to'),
             func.max(Scanfile.master_add1).label('master_add1'),
             func.max(Scanfile.master_add2).label('master_add2'),
             func.max(Scanfile.master_add3).label('master_add3'),
             func.max(Scanfile.master_add4).label('master_add4'),
-            func.max(Scanfile.master_delivery).label('master_delivery')
+            func.max(Scanfile.master_delivery).label('master_delivery'),
+            func.max(Scanfile.master_ctl).label('master_ctl'),
+            func.max(Scanfile.st_zip).label('st_zip')
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
             Scanfile.pallet != None
         ).group_by(
             Scanfile.pallet,
-            Scanfile.pallet_type,
             Scanfile.sku
-        ).all()
-        
-        items = []
-        for row in results:
-            # Also get weight from masterdata
+        ).order_by(Scanfile.pallet, Scanfile.sku).all()
+
+        # Nhóm các SKU lại theo từng pallet
+        pallets_data = {}
+        for row in sku_details_query:
+            if row.pallet not in pallets_data:
+                pallets_data[row.pallet] = {
+                    'pallet_no': row.pallet,
+                    'pallet_type': row.pallet_type,
+                    'jobscan': row.jobscan,
+                    'ship_to': row.ship_to,
+                    'master_add1': row.master_add1,
+                    'master_add2': row.master_add2,
+                    'master_add3': row.master_add3,
+                    'master_add4': row.master_add4,
+                    'master_delivery': row.master_delivery,
+                    'master_ctl': row.master_ctl,
+                    'st_zip': row.st_zip,
+                    'skus': [],
+                    'qty': 0, # Tổng số thùng của pallet
+                    'has_small_label': False
+                }
+            
             master_item = MasterData.query.filter_by(sku=row.sku).first()
             sku_weight = master_item.weight if master_item and master_item.weight else 0
 
-            items.append({
-                'pallet_no': row.pallet,
-                'pallet_type': row.pallet_type,
+            pallets_data[row.pallet]['skus'].append({
                 'sku': row.sku,
-                'qty': row.sscc_count, # This is now the count of cartons
+                'qty': row.sscc_count,
                 'tag_label': row.tag_label,
-                'jobscan': row.jobscan,
-                'sku_weight': sku_weight, # Add weight here
-                'ship_to': row.ship_to,
-                'master_add1': row.master_add1,
-                'master_add2': row.master_add2,
-                'master_add3': row.master_add3,
-                'master_add4': row.master_add4,
-                'master_delivery': row.master_delivery
+                'sku_weight': sku_weight
             })
+            # Cập nhật tổng số lượng và cờ tem nhỏ
+            pallets_data[row.pallet]['qty'] += row.sscc_count
+            if row.tag_label == 'Y':
+                pallets_data[row.pallet]['has_small_label'] = True
+            
+        items = list(pallets_data.values())
             
         return jsonify({'success': True, 'items': items})
     except Exception as e:
@@ -503,19 +530,19 @@ def get_sscc_data():
             items.append({
                 'id': r.id,
                 'pallet': r.pallet,
-                'sscc': r.sscc,
-                'barcode': r.barcode,
+                'sscc': getattr(r, 'sscc', ''),
+                'barcode': getattr(r, 'barcode', ''),
                 'sku': r.sku,
                 'qty': r.qty,
-                'tag_label': r.tag_label,
-                'master_delivery': r.master_delivery,
-                'ship_to': r.ship_to,
-                'master_add1': r.master_add1,
-                'master_add2': r.master_add2,
-                'master_add3': r.master_add3,
-                'master_add4': r.master_add4,
-                'st_zip': r.st_zip,
-                'master_ctl': r.master_ctl
+                'tag_label': getattr(r, 'tag_label', ''),
+                'master_delivery': getattr(r, 'master_delivery', ''),
+                'ship_to': getattr(r, 'ship_to', ''),
+                'master_add1': getattr(r, 'master_add1', ''),
+                'master_add2': getattr(r, 'master_add2', ''),
+                'master_add3': getattr(r, 'master_add3', ''),
+                'master_add4': getattr(r, 'master_add4', ''),
+                'st_zip': getattr(r, 'st_zip', ''),
+                'master_ctl': getattr(r, 'master_ctl', '')
             })
         return jsonify({'success': True, 'items': items})
     except Exception as e:
@@ -610,3 +637,24 @@ def mark_read():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/mark_all_read', methods=['POST'])
+def mark_all_read():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    try:
+        # Cập nhật tất cả các log chưa đọc thành đã đọc
+        Log.query.filter_by(is_read=False).update({'is_read': True})
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Tất cả đã được đánh dấu đã đọc.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/unread_count')
+def unread_count():
+    if 'user' not in session: return jsonify({'success': False, 'count': 0}), 401
+    try:
+        count = Log.query.filter_by(is_read=False).count()
+        return jsonify({'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e), 'count': 0}), 500

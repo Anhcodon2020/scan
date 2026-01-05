@@ -3,543 +3,775 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>In Tem Pallet (A4)</title>
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <title>In Tem & Thống Kê Pallet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        /* --- GIAO DIỆN MÀN HÌNH --- */
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; padding: 20px; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        .header-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-nav a { text-decoration: none; color: #555; font-weight: bold; }
-        h2 { text-align: center; color: #333; margin: 0 0 20px 0; }
-        
-        .controls { display: flex; gap: 10px; justify-content: center; background: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        select, button { padding: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; }
-        select { min-width: 200px; }
-        
-        button { color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-        .btn-load { background-color: #007bff; }
-        .btn-load:hover { background-color: #0056b3; }
-        .btn-excel { background-color: #28a745; }
-        .btn-excel:hover { background-color: #218838; }
-        
-        table { width: 100%; border-collapse: collapse; background: white; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; }
-        th { background-color: #007bff; color: white; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        tr:hover { background-color: #f1f1f1; }
-        
-        .btn-print { background-color: #17a2b8; padding: 6px 12px; font-size: 14px; border-radius: 4px; }
-        .btn-print:hover { background-color: #138496; }
-        
-        .status-printed { color: green; font-weight: bold; }
-        .status-pending { color: red; font-weight: bold; }
-
-        /* --- GIAO DIỆN IN ẤN (A4) --- */
-        #printArea { display: none; }
-        
-        @media print {
-            @page { size: A4; margin: 0; }
-            body * { visibility: hidden; }
-            #printArea, #printArea * { visibility: visible; }
-            #printArea { 
-                display: block; 
-                position: absolute; 
-                left: 0; top: 0; 
-                width: 210mm; 
-                height: 297mm; 
-                background: white; 
-            }
-            
-            .label-box {
-                width: 190mm; 
-                height: 277mm;
-                margin: 10mm;
-                padding: 10mm;
-                box-sizing: border-box;
-                border: 3px solid #000; /* Viền bao quanh tem */
-                display: flex; 
-                flex-direction: column;
-                font-family: Arial, sans-serif;
-                position: relative;
-            }
-            
-            .lbl-header { text-align: center; font-size: 40px; font-weight: 900; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 20px; }
-            .lbl-row { display: flex; justify-content: space-between; font-size: 24px; margin-bottom: 15px; }
-            .lbl-barcode { text-align: center; margin: 20px 0; }
-            
-            .lbl-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 20px; }
-            .lbl-table th, .lbl-table td { border: 1px solid #000; padding: 10px; text-align: center; }
-            .lbl-table th { background-color: #ddd; font-weight: bold; }
-            
-            .lbl-footer { margin-top: auto; border-top: 3px solid #000; padding-top: 15px; }
-            .lbl-footer-row { display: flex; justify-content: space-between; font-size: 30px; font-weight: bold; }
-        }
+        body { background-color: #f8f9fa; }
+        .container { max-width: 1200px; margin-top: 30px; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; }
+        .table th { background-color: #e9ecef; }
     </style>
+    <!-- Thư viện in PDF -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div class="header-nav">
-            <a href="/">← Quay lại Menu</a>
-            <span>Xin chào, {{ session.get('user') }}</span>
+    <!-- Navbar đơn giản -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/">HỆ THỐNG SCAN</a>
+            <div class="d-flex">
+                <a href="/notifications" class="btn btn-outline-light btn-sm me-2 position-relative">
+                    <i class="bi bi-bell"></i> Lịch sử TB
+                    <span id="notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
+                </a>
+                <a href="/" class="btn btn-outline-light btn-sm me-2">Quay lại Scan</a>
+                <a href="/logout" class="btn btn-danger btn-sm">Đăng xuất</a>
+            </div>
         </div>
-        
-        <h2>QUẢN LÝ & IN TEM PALLET</h2>
-        
-        <div class="controls">
-            <select id="jobType">
-                <option value="">-- Chọn Job Type --</option>
-                {% for type in job_types %}
-                <option value="{{ type }}">{{ type }}</option>
-                {% endfor %}
-            </select>
-            <button class="btn-load" onclick="loadData()">Tải Dữ Liệu</button>
-            <button class="btn-excel" onclick="exportExcel()">Xuất Excel</button>
-        </div>
+    </nav>
 
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 80px;">Pallet</th>
-                    <th style="width: 100px;">Loại</th>
-                    <th>Chi tiết SKU</th>
-                    <th style="width: 80px;">Tem nhỏ</th>
-                    <th style="width: 120px;">Job Scan</th>
-                    <th style="width: 80px;">Tổng Thùng</th>
-                    <th style="width: 80px;">Tổng KG</th>
-                    <th style="width: 100px;">Trạng thái</th>
-                    <th style="width: 100px;">Hành động</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <tr><td colspan="9">Vui lòng chọn Job Type và nhấn Tải Dữ Liệu</td></tr>
-            </tbody>
-        </table>
+    <div class="container">
+        <div class="card">
+            <div class="card-header bg-white py-3">
+                <h4 class="mb-0 text-primary"><i class="bi bi-printer"></i> Thống Kê & In Tem Pallet</h4>
+            </div>
+            <div class="card-body">
+                <!-- Khu vực chọn Job Type -->
+                <div class="row mb-4 align-items-end">
+                    <div class="col-md-6">
+                        <label for="jobTypeSelect" class="form-label fw-bold">Chọn Job Type (Đã có Pallet):</label>
+                        <select class="form-select form-select-lg" id="jobTypeSelect">
+                            <option value="" selected disabled>-- Vui lòng chọn Job Type --</option>
+                            {% for job in job_types %}
+                            <option value="{{ job }}">{{ job }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button class="btn btn-success" id="refreshBtn" disabled>
+                            <i class="bi bi-arrow-clockwise"></i> Tải lại dữ liệu
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bảng thống kê -->
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle text-center" id="palletTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 5%;">STT</th>
+                                <th style="width: 10%;">Pallet No</th>
+                                <th style="width: 10%;">Loại Pallet</th>
+                                <th style="width: 20%;">Job Scan</th>
+                                <th style="width: 10%;">Số lượng (SSCC)</th>
+                                <th style="width: 15%;">Trọng lượng (Kg)</th>
+                                <th style="width: 10%;">Ghi chú</th>
+                                <th style="width: 10%;">Trạng thái</th>
+                                <th style="width: 10%;">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td colspan="9" class="text-muted py-4">Vui lòng chọn Job Type để xem dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Khu vực in ẩn -->
-    <div id="printArea"></div>
+    <!-- Khu vực hiển thị thông báo (Toast) -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index: 1050;"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const jobSelect = document.getElementById('jobTypeSelect');
+        const tableBody = document.getElementById('tableBody');
+        const refreshBtn = document.getElementById('refreshBtn');
+        let currentData = []; // Biến toàn cục để lưu dữ liệu hiện tại
+
         function loadData() {
-            const jobType = document.getElementById('jobType').value;
-            if (!jobType) { alert("Vui lòng chọn Job Type!"); return; }
-            
-            const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '<tr><td colspan="9">Đang tải dữ liệu...</td></tr>';
+            const jobType = jobSelect.value;
+            if (!jobType) return;
+
+            tableBody.innerHTML = '<tr><td colspan="6" class="py-4"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Đang tải dữ liệu...</div></td></tr>';
+            refreshBtn.disabled = true;
 
             fetch('/api/get_print_data', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({job_type: jobType})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_type: jobType })
             })
-            .then(res => res.json())
+            .then(response => response.json())
             .then(data => {
+                refreshBtn.disabled = false;
                 if (data.success) {
+                    currentData = data.items; // Lưu dữ liệu vào biến toàn cục
                     renderTable(data.items);
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="9" style="color:red">${data.message}</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">Lỗi: ${data.message}</td></tr>`;
                 }
             })
-            .catch(err => tbody.innerHTML = `<tr><td colspan="9" style="color:red">Lỗi kết nối: ${err}</td></tr>`);
+            .catch(err => {
+                refreshBtn.disabled = false;
+                console.error(err);
+                tableBody.innerHTML = '<tr><td colspan="9" class="text-danger py-3">Lỗi kết nối đến máy chủ</td></tr>';
+            });
         }
 
         function renderTable(items) {
-            const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '';
-            
-            // Gom nhóm dữ liệu theo Pallet No
-            const pallets = {};
-            items.forEach(item => {
-                if (!pallets[item.pallet_no]) {
-                    let tare = 0;
-                    const pt = String(item.pallet_type || '');
-                    if (pt === '1.2') tare = 17;
-                    else if (pt === '1.6') tare = 20;
-                    else if (pt === '1.9' || pt === '1m9') tare = 25;
-
-                    pallets[item.pallet_no] = {
-                        pallet_no: item.pallet_no,
-                        pallet_type: item.pallet_type,
-                        jobscan: item.jobscan,
-                        ship_to: item.ship_to,
-                        skus: [],
-                        master_add1: item.master_add1,
-                        master_add2: item.master_add2,
-                        master_add3: item.master_add3,
-                        master_add4: item.master_add4,
-                        master_delivery: item.master_delivery,
-                        total_qty: 0,
-                        tare_weight: tare,
-                        net_weight: 0,
-                        total_weight: tare,
-                        has_tag_y: false
-                    };
-                }
-                const p = pallets[item.pallet_no];
-                const weight = (item.qty * item.sku_weight);
-                p.skus.push({sku: item.sku, qty: item.qty, weight: weight, tag_label: item.tag_label});
-                p.total_qty += item.qty;
-                p.net_weight += weight;
-                p.total_weight += weight;
-                if (item.tag_label === 'Y') p.has_tag_y = true;
-            });
-
-            // Sắp xếp và hiển thị
-            const sortedPallets = Object.values(pallets).sort((a,b) => parseInt(a.pallet_no) - parseInt(b.pallet_no));
-            
-            if (sortedPallets.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9">Không có dữ liệu pallet nào.</td></tr>';
+            if (!items || items.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="9" class="text-muted py-3">Không tìm thấy dữ liệu pallet nào cho Job này.</td></tr>';
                 return;
             }
 
-            sortedPallets.forEach(p => {
-                const tr = document.createElement('tr');
-                const skuDetails = p.skus.map(s => `<div><b>${s.sku}</b>: ${s.qty} ctns</div>`).join('');
-                const statusHtml = p.jobscan ? '<span class="status-printed">Đã in</span>' : '<span class="status-pending">Chưa in</span>';
-                const tagLabelHtml = p.has_tag_y ? '<span style="color:red; font-weight:bold;">Y</span>' : '';
-                
-                tr.innerHTML = `
-                    <td><strong>${p.pallet_no}</strong></td>
-                    <td>${p.pallet_type || ''}</td>
-                    <td style="text-align: left;">${skuDetails}</td>
-                    <td>${tagLabelHtml}</td>
-                    <td>${p.jobscan || ''}</td>
-                    <td>${p.total_qty}</td>
-                    <td>${p.total_weight.toFixed(2)}</td>
-                    <td>${statusHtml}</td>
-                    <td>
-                        <button class="btn-print" onclick='printLabel(${JSON.stringify(p)})'>In Tem</button>
-                        <button class="btn-print" style="background-color: #6f42c1; margin-top: 5px;" onclick='printLabel150x100(${JSON.stringify(p)})'>In Tem 100x150</button>
-                        <button class="btn-print" style="background-color: #28a745; margin-top: 5px;" onclick='printSSCC("${p.pallet_no}")'>In SSCC</button>
-                    </td>
+            let html = '';
+            items.forEach((item, index) => {
+                // Tính tổng trọng lượng từ danh sách SKU trong pallet
+                let totalWeight = 0;
+                if (item.skus) {
+                    item.skus.forEach(s => {
+                        // s.qty là số lượng thùng, s.sku_weight là trọng lượng 1 thùng
+                        totalWeight += (s.qty * (s.sku_weight || 0));
+                    });
+                }
+
+                // Xác định trạng thái in
+                const statusBadge = item.jobscan 
+                    ? '<span class="badge bg-success">Đã in</span>' 
+                    : '<span class="badge bg-warning text-dark">Chờ in</span>';
+
+                const note = item.has_small_label ? '<span class="badge bg-info text-dark">Tem nhỏ</span>' : '';
+
+                // Nút in SSCC chỉ hiện nếu không phải tem nhỏ (tag_label="N")
+                const btnSSCC = !item.has_small_label ? `
+                    <button class="btn btn-outline-dark btn-sm ms-1" onclick="printSSCCLabel(${index}, this)">
+                        <i class="bi bi-upc-scan"></i> SSCC
+                    </button>
+                ` : '';
+
+                // Nút in Tem Nhỏ chỉ hiện nếu là tem nhỏ (tag_label="Y")
+                const btnSmallLabel = item.has_small_label ? `
+                    <button class="btn btn-warning btn-sm ms-1" onclick="printSmallLabel(${index}, this)">
+                        <i class="bi bi-tag"></i> Tem Nhỏ
+                    </button>
+                ` : '';
+
+                html += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td class="fw-bold text-primary">${item.pallet_no}</td>
+                        <td>${item.pallet_type || '-'}</td>
+                        <td>${item.jobscan || ''}</td>
+                        <td class="fw-bold">${item.qty}</td>
+                        <td>${totalWeight.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td>${note}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick="printLabel(${index})">
+                                <i class="bi bi-printer"></i> In Tem
+                            </button>
+                            ${btnSSCC}
+                            ${btnSmallLabel}
+                        </td>
+                    </tr>
                 `;
-                tbody.appendChild(tr);
             });
+            tableBody.innerHTML = html;
         }
 
-        function printLabel(palletData) {
-            updatePrintStyle('A4');
-            const jobType = document.getElementById('jobType').value;
-            let jobScan = palletData.jobscan;
+        function printLabel(index) {
+            const item = currentData[index];
+            if (!item) return;
 
-            // Nếu chưa có JobScan, tạo mới và cập nhật server
-            if (!jobScan) {
+            // --- Xử lý Jobscan tự động ---
+            let jobScanToPrint = item.jobscan;
+            let needUpdate = false;
+
+            if (!jobScanToPrint || jobScanToPrint === 'PRINTED') {
                 const now = new Date();
-                const fmt = n => n.toString().padStart(2, '0');
-                jobScan = `${now.getFullYear()}${fmt(now.getMonth() + 1)}${fmt(now.getDate())}${fmt(now.getHours())}${fmt(now.getMinutes())}${fmt(now.getSeconds())}`;
-                
-                fetch('/api/update_jobscan', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        job_type: jobType,
-                        pallet_no: palletData.pallet_no,
-                        jobscan: jobScan
-                    })
-                });
-                // Cập nhật tạm thời để hiển thị ngay
-                palletData.jobscan = jobScan;
+                const yyyy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const dd = String(now.getDate()).padStart(2, '0');
+                const hh = String(now.getHours()).padStart(2, '0');
+                const min = String(now.getMinutes()).padStart(2, '0');
+                const ss = String(now.getSeconds()).padStart(2, '0');
+                jobScanToPrint = `${yyyy}${mm}${dd}${hh}${min}${ss}`;
+                needUpdate = true;
             }
 
-            const printArea = document.getElementById('printArea');
-            
-            // Tạo các dòng SKU cho bảng in
-            let skuRows = palletData.skus.map((s, i) => {
-                const note = s.tag_label === 'Y' ? 'Tem nhỏ' : '';
-                return `
-                <tr>
-                    <td>${i+1}</td>
-                    <td style="font-weight:bold">${s.sku}</td>
-                    <td>${s.qty}</td>
-                    <td>${s.weight.toFixed(2)}</td>
-                    <td>${note}</td>
-                </tr>
-            `}).join('');
+            if (needUpdate) {
+                // Cập nhật UI tạm thời
+                item.jobscan = jobScanToPrint;
+                
+                // Gọi API cập nhật DB
+                fetch('/api/update_jobscan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_type: jobSelect.value,
+                        pallet_no: item.pallet_no,
+                        jobscan: jobScanToPrint
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        renderTable(currentData); // Refresh bảng chính
+                    }
+                })
+                .catch(console.error);
+            }
 
-            // Nội dung tem in (100mm x 150mm)
-            printArea.innerHTML = `
-                <div class="label-box">
-                    <div class="lbl-header">PALLET ID: ${palletData.pallet_no}</div>
-                    
-                    <div class="lbl-row">
-                        <span><strong>Job:</strong> ${jobType}</span>
-                        <span><strong>Loại:</strong> ${palletData.pallet_type || ''}</span>
+            // 1. Tính toán trọng lượng
+            let netWeight = 0; // Trọng lượng hàng
+            let palletTare = 0; // Trọng lượng vỏ pallet
+
+            // Tính Net Weight
+            if (item.skus) {
+                item.skus.forEach(s => {
+                    netWeight += (s.qty * (s.sku_weight || 0));
+                });
+            }
+
+            // Tính Pallet Tare Weight theo yêu cầu
+            // Logic: 1.2 -> 17kg, 1.6 -> 22kg, 1.9 -> 25kg
+            const pType = String(item.pallet_type || '');
+            if (pType.includes('1.2')) {
+                palletTare = 17;
+            } else if (pType.includes('1.6')) {
+                palletTare = 22;
+            } else if (pType.includes('1.9')) {
+                palletTare = 25;
+            } else {
+                // Mặc định nếu không khớp (hoặc có thể để 0)
+                palletTare = 0; 
+            }
+
+            const grossWeight = netWeight + palletTare;
+
+            // 2. Tạo nội dung HTML để in
+            // Tạo barcode dạng base64 image
+            let barcodeImg = '';
+            if (jobScanToPrint) {
+                try {
+                    const canvas = document.createElement("canvas");
+                    JsBarcode(canvas, jobScanToPrint, {
+                        format: "CODE128",
+                        displayValue: true,
+                        fontSize: 18,
+                        margin: 10
+                    });
+                    barcodeImg = canvas.toDataURL("image/png");
+                } catch (e) {
+                    console.error("Lỗi tạo barcode:", e);
+                }
+            }
+
+            // Tạo cửa sổ in mới
+            const printWindow = window.open('', '_blank');
+            
+            // Xử lý cột Ghi chú (Tem nhỏ)
+            const hasSmallLabel = item.skus.some(s => s.tag_label === 'Y');
+
+            let skuRows = '';
+            item.skus.forEach((s, i) => {
+                const noteCell = hasSmallLabel ? `<td>${s.tag_label === 'Y' ? 'Tem nhỏ' : ''}</td>` : '';
+                skuRows += `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td>${s.sku}</td>
+                        <td>${s.qty}</td>
+                        <td>${(s.sku_weight || 0).toFixed(2)}</td>
+                        <td>${(s.qty * (s.sku_weight || 0)).toFixed(2)}</td>
+                        ${noteCell}
+                    </tr>
+                `;
+            });
+
+            const tableHeader = `
+                <thead>
+                    <tr>
+                        <th>STT</th>
+                        <th>SKU</th>
+                        <th>Số lượng (Thùng)</th>
+                        <th> Số kg trong 1 thùng(Kg)</th>
+                        <th>Tổng trọng lượng(Kg)</th>
+                        ${hasSmallLabel ? '<th>Ghi chú</th>' : ''}
+                    </tr>
+                </thead>
+            `;
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Print Label - ${item.pallet_no}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+                        .header { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; position: relative; }
+                        .header-right { position: absolute; top: 0; right: 0; font-size: 14px; font-weight: normal; text-align: right; }
+                        .info-row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 16px; }
+                        .info-row strong { font-size: 18px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; }
+                        th, td { border: 1px solid #000; padding: 10px; text-align: center; }
+                        th { background-color: #f2f2f2; }
+                        .footer { margin-top: 30px; font-size: 16px; border-top: 2px solid #333; padding-top: 20px; }
+                        .footer-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+                        .gross-weight { font-size: 20px; font-weight: bold; margin-top: 15px; }
+                        .barcode-container { text-align: center; margin-top: 40px; }
+                        img { max-width: 100%; height: auto; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        PALLET LABEL
+                        
                     </div>
                     
-                    <div class="lbl-barcode">
-                        <svg id="barcode"></svg>
-                        <div style="font-size: 18px;">${jobScan}</div>
+                    <div class="info-row">
+                        <span>Job No: <strong>${jobSelect.value}</strong></span>
+                        <span>Date: ${new Date().toLocaleDateString('en-GB')}</span>
                     </div>
-                    
-                    <table class="lbl-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 30px;">#</th>
-                                <th>SKU</th>
-                                <th style="width: 50px;">Qty</th>
-                                <th style="width: 80px;">KG</th>
-                                <th>Ghi chú</th>
-                            </tr>
-                        </thead>
+                    <div class="info-row">
+                        <span>Pallet No: <strong>${item.pallet_no}</strong></span>
+                        <span>Type: ${item.pallet_type || 'N/A'}</span>
+                    </div>
+
+                    <table>
+                        ${tableHeader}
                         <tbody>
                             ${skuRows}
                         </tbody>
                     </table>
-                    
-                    <div class="lbl-footer">
-                        <div class="lbl-footer-row" style="font-size: 24px; margin-bottom: 10px;">
-                            <span>Net: ${palletData.net_weight.toFixed(2)} KG</span>
-                            <span>Tare: ${palletData.tare_weight} KG</span>
+
+                    <div class="footer">
+                        <div class="footer-row">
+                            <span>Total Quantity (Box):</span>
+                            <strong>${item.qty}</strong>
                         </div>
-                        <div class="lbl-footer-row">
-                            <span>Tổng: ${palletData.total_qty} ctns</span>
-                            <span>Gross: ${palletData.total_weight.toFixed(2)} KG</span>
+                        <div class="footer-row">
+                            <span>Net Weight:</span>
+                            <strong>${netWeight.toFixed(2)} Kg</strong>
+                        </div>
+                        <div class="footer-row">
+                            <span>Pallet Weight (Tare):</span>
+                            <strong>${palletTare} Kg</strong>
+                        </div>
+                        <div class="footer-row gross-weight">
+                            <span>GROSS WEIGHT:</span>
+                            <span>${grossWeight.toFixed(2)} Kg</span>
                         </div>
                     </div>
-                </div>
+
+                    <div class="barcode-container">
+                        ${barcodeImg ? `<img src="${barcodeImg}" />` : ''}
+                        ${!barcodeImg && jobScanToPrint ? `<div>Job Scan: ${jobScanToPrint}</div>` : ''}
+                    </div>
+
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                        }
+                    <\/script>
+                </body>
+                </html>
             `;
 
-            // Tạo mã vạch
-            JsBarcode("#barcode", jobScan, {
-                format: "CODE128",
-                width: 3,
-                height: 80,
-                displayValue: false,
-                margin: 0
-            });
-
-            // Gọi lệnh in
-            window.print();
-            
-            // Tải lại dữ liệu sau khi in để cập nhật trạng thái "Đã in"
-            setTimeout(loadData, 1000);
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
         }
 
-        function printLabel150x100(palletData) {
-            updatePrintStyle('100x150');
-            const jobType = document.getElementById('jobType').value;
-            let jobScan = palletData.jobscan;
+        function printSSCCLabel(index, btn) {
+            const item = currentData[index];
+            if (!item) return;
 
-            if (!jobScan) {
-                const now = new Date();
-                const fmt = n => n.toString().padStart(2, '0');
-                jobScan = `${now.getFullYear()}${fmt(now.getMonth() + 1)}${fmt(now.getDate())}${fmt(now.getHours())}${fmt(now.getMinutes())}${fmt(now.getSeconds())}`;
-                
-                fetch('/api/update_jobscan', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        job_type: jobType,
-                        pallet_no: palletData.pallet_no,
-                        jobscan: jobScan
-                    })
-                });
-                palletData.jobscan = jobScan;
-            }
+            // Hiển thị loading spinner
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            btn.disabled = true;
 
-            const printArea = document.getElementById('printArea');
-            
-            let skuRows = palletData.skus.map((s, i) => `
-                <tr>
-                    <td>${i+1}</td>
-                    <td style="font-weight:bold">${s.sku}</td>
-                    <td>${s.qty}</td>
-                </tr>
-            `).join('');
-
-            printArea.innerHTML = `
-                <div class="label-box">
-                    <!-- Row 1: Job & Pallet -->
-                    <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 5px; font-weight: bold">
-                        <div style="width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;">
-                            <span style="font-size: 12px;"><strong>FROM:</strong> </span>
-                            <div style="font-size: 11px;">KLN ORDC#61</div>
-                                                     
-                        </div>
-                        <div style="width: 50%; text-align: right; padding-left: 5px; box-sizing: border-box;">
-                            <div style="font-size: 12px;"><strong>TO:</strong> ${palletData.ship_to}</div>
-                            <div style="font-size: 11px;">
-                                ${palletData.master_add1} ${palletData.master_add2} ${palletData.master_add3} ${palletData.master_add4}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Row 2: Type & Scan Text -->
-                    <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 5px;">
-                        <div style="width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;">
-                            <div style="font-size: 12px;"><strong>CUSTOMER:</strong></div>
-                            <div style="font-size: 12px;"></div>
-                        </div>
-                        <div style="width: 50%; padding-left: 5px; box-sizing: border-box;">
-                            <div style="font-size: 12px;"><strong>CARRIER:</strong></div><br>
-                            <div style="font-size: 12px;">KLN LOGISTICS</div>
-                        </div>
-                    </div>
-
-                    <!-- Row 3: PO -->
-                    <div style="text-align: left; margin: 5px 0;">
-                        <div style="font-weight: bold; font-size: 24px;">PO #:</div>
-                        <div style="font-size: 60px; font-weight: bold; margin-top: 5px">${palletData.master_delivery}</div>
-                    </div>
-
-                    <!-- Row 4: SKU Table -->
-                    <div style="flex-grow: 1;">
-                        <table class="lbl-table" style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                            <thead>
-                                <tr>
-                                    <th style="border: 1px solid #000;">#</th>
-                                    <th style="border: 1px solid #000;">SKU</th>
-                                    <th style="border: 1px solid #000;">Qty</th>
-                                </tr>
-                            </thead>
-                            <tbody>${skuRows}</tbody>
-                        </table>
-                    </div>
-
-                    <!-- Row 5: Footer Weights -->
-                    <div style="border-top: 2px solid #000; padding-top: 5px; margin-top: 5px; font-size: 14px; font-weight: bold;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>Net: ${palletData.net_weight.toFixed(2)}</span>
-                            <span>Tare: ${palletData.tare_weight}</span>
-                        </div>
-                        <div style="text-align: right; font-size: 16px; margin-top: 2px;">
-                            Gross: ${palletData.total_weight.toFixed(2)} KG
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            window.print();
-            setTimeout(loadData, 1000);
-        }
-
-        function printSSCC(palletNo) {
-            updatePrintStyle('100x150');
-            const jobType = document.getElementById('jobType').value;
-            
+            // Gọi API lấy danh sách chi tiết SSCC trong pallet
             fetch('/api/get_sscc_data', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({job_type: jobType, pallet_no: palletNo})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    job_type: jobSelect.value,
+                    pallet_no: item.pallet_no
+                })
             })
             .then(res => res.json())
             .then(data => {
+                // Khôi phục trạng thái nút
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+
                 if (data.success) {
-                    const printArea = document.getElementById('printArea');
-                    printArea.innerHTML = '';
-                    
-                    data.items.forEach((item, index) => {
-                        const div = document.createElement('div');
-                        div.className = 'label-box';
-                        div.style.pageBreakAfter = 'always'; // Ngắt trang sau mỗi tem
-                        
-                        div.innerHTML = `
-                                                       
-                            <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
-                                <div style="font-size: 18px; width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;"><strong>FROM:</strong> KLN ORDC#61</div>
-                                <div style="font-size: 18px; width: 50%; padding-left: 5px; box-sizing: border-box;">
-                                    <strong>TO:</strong> ${item.ship_to || ''}
-                                    <div style="font-size: 12px; font-weight: normal;">
-                                        ${item.master_add1 || ''} ${item.master_add2 || ''} ${item.master_add3 || ''} ${item.master_add4 || ''} ${item.st_zip || ''}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
-                                <div style="font-size: 11px; width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;"><strong>CUSTOMER</strong> </div>
-                                <div style="font-size: 11px; width: 50%; padding-left: 5px; box-sizing: border-box;"><strong>CARRIER</strong> KLN LOGISTICS </div>
-                                
-                            </div>
-
-                            <div style="border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
-                                <strong>PO #:</strong> 
-                                <div style="font-size: 48px; font-weight: bold; margin-top: 5px;">${item.master_delivery || ''}</div>
-                                
-                            </div>
-                            <div style="display: flex; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px;">
-                                <div style="width: 50%; border-right: 1px solid #000; padding-right: 5px; box-sizing: border-box;">
-                                    <strong>SKU:</strong> <div style="font-size: 30px; font-weight: bold;">${item.sku}</div>
-                                    <div style="text-align: left;">
-                                        <svg class="barcode-sku" 
-                                            jsbarcode-value="${item.sku}" 
-                                            jsbarcode-format="CODE128" 
-                                            jsbarcode-width="2" 
-                                            jsbarcode-height="50" 
-                                            jsbarcode-displayValue="false">
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div style="width: 50%; padding-left: 5px; box-sizing: border-box;">
-                                    <strong>QTY:</strong> <div style="font-size: 30px; font-weight: bold;">${item.qty || ''}</div>
-                                </div>
-                            </div>
-
-                            <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end;">
-                                <div style="text-align: left;">
-                                    <div style="font-size: 18px; margin-bottom: 5px;"><strong>SSCC:</strong></div>
-                                    <svg class="barcode-sscc" 
-                                        jsbarcode-value="${item.sscc}" 
-                                        jsbarcode-format="CODE128" 
-                                        jsbarcode-width="2" 
-                                        jsbarcode-height="60" 
-                                        jsbarcode-displayValue="true"
-                                        jsbarcode-fontSize="14">
-                                    </svg>
-                                </div>
-                            </div>
-                            <div style="position: absolute; bottom: 10px; right: 10px; text-align: right;">
-                                <div style="font-size: 10px; font-weight: bold;">${index + 1}/${data.items.length}</div>
-                                <div style="font-size: 10px; font-weight: bold;">PALLET: ${item.pallet}</div>
-                            </div>
-                        `;
-                        printArea.appendChild(div);
-                    });
-                    
-                    JsBarcode(".barcode-sku").init();
-                    JsBarcode(".barcode-sscc").init();
-                    window.print();
+                    if (data.items && data.items.length > 0) {
+                        printMultipleSSCCLabels(item, data.items);
+                    } else {
+                        alert('Không tìm thấy dữ liệu SSCC nào cho pallet này.');
+                    }
                 } else {
-                    alert(data.message);
+                    alert('Lỗi Server: ' + (data.message || 'Không lấy được dữ liệu.'));
                 }
             })
-            .catch(err => alert('Lỗi: ' + err));
+            .catch(err => {
+                // Khôi phục trạng thái nút khi lỗi
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+
+                console.error(err);
+                alert('Lỗi kết nối: ' + err.message);
+            });
         }
 
-        function exportExcel() {
-            const jobType = document.getElementById('jobType').value;
-            if(!jobType) { alert('Vui lòng chọn Job Type'); return; }
-            window.location.href = `/export_pallet_data?job_type=${encodeURIComponent(jobType)}`;
-        }
+        function printSmallLabel(index, btn) {
+            const item = currentData[index];
+            if (!item) return;
 
-        function updatePrintStyle(type) {
-            let style = document.getElementById('print-style-override');
-            if (!style) {
-                style = document.createElement('style');
-                style.id = 'print-style-override';
-                document.head.appendChild(style);
-            }
-            
-            if (type === '100x150') {
-                style.innerHTML = `
-                    @media print {
-                        @page { size: 100mm 150mm; margin: 0; }
-                        #printArea { width: 100mm; }
-                        .label-box { 
-                            width: 100mm; height: 150mm; 
-                            padding: 0mm; 
-                            box-sizing: border-box;
-                            border: 2px solid #000; 
-                            font-family: Arial, sans-serif;
-                            display: flex; flex-direction: column;
-                            position: relative;
-                        }
+            // Hiển thị loading spinner
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            btn.disabled = true;
+
+            // Gọi API lấy danh sách chi tiết SSCC trong pallet
+            fetch('/api/get_sscc_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    job_type: jobSelect.value,
+                    pallet_no: item.pallet_no
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Khôi phục trạng thái nút
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+
+                if (data.success) {
+                    if (data.items && data.items.length > 0) {
+                        printMultipleSmallLabels(item, data.items);
+                    } else {
+                        alert('Không tìm thấy dữ liệu SSCC nào cho pallet này.');
                     }
-                `;
-            } else {
-                style.innerHTML = ''; // Reset to default (A4)
-            }
+                } else {
+                    alert('Lỗi Server: ' + (data.message || 'Không lấy được dữ liệu.'));
+                }
+            })
+            .catch(err => {
+                // Khôi phục trạng thái nút khi lỗi
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+
+                console.error(err);
+                alert('Lỗi kết nối: ' + err.message);
+            });
         }
+
+        function printMultipleSSCCLabels(palletInfo, ssccItems) {
+            const printWindow = window.open('', '_blank');
+            
+            // Tạo HTML cho từng tem
+            const labelsHtml = ssccItems.map((ssccItem, index) => {
+                const fromAddr = [ssccItem.ship_to,ssccItem.master_add1, ssccItem.master_add2, ssccItem.master_add3, ssccItem.master_add4, ssccItem.st_zip].filter(Boolean).join(', ');
+                const toAddr = [ ssccItem.master_delivery].filter(Boolean).join(', ');
+                const ssccCode = ssccItem.sscc || ssccItem.barcode || ''; 
+
+                return `
+                    <div class="label-page">
+                        <div class="row" style="height: 30mm;">
+                            <div class="col">
+                                <div class="label-title">FROM</div>
+                                <div class="label-content">KLN ORDC#61</div>
+                            </div>
+                            <div class="col">
+                                <div class="label-title">TO</div>
+                                <div class="label-content">${fromAddr}</div>
+                            </div>
+                        </div>
+                        <div class="row" style="height: 10mm;">
+                            <div class="col">
+                                <div class="label-title">CUSTOMER</div>
+                                <div class="label-content"></div>
+                            </div>
+                            <div class="col">
+                                <div class="label-title">CARRIER</div>
+                                <div class="label-content">KLN Logistics</div>
+                            </div>
+                        </div>
+                        <div class="po-section">
+                            <div class="label-title_PO">PO</div>
+                            <div class="label-content_PO">${toAddr}</div>
+                        </div>
+                        <div class="sku-section">
+                            <table>
+                                <thead><tr><th>SKU</th><th>Quantity</th></tr></thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="SKU-cell">
+                                            ${ssccItem.sku}
+                                            <br>
+                                            <svg class="barcode"
+                                                jsbarcode-format="CODE128"
+                                                jsbarcode-value="${ssccItem.sku}"
+                                                jsbarcode-height="50"
+                                                jsbarcode-displayValue="false">
+                                            </svg>
+                                        </td>
+                                        <td>${ssccItem.qty}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="sscc-section">
+                            <div class="label-title" style="margin-bottom: 5px;">SSCC</div>
+                            <svg class="barcode"
+                                jsbarcode-format="CODE128"
+                                jsbarcode-value="${ssccCode}"
+                                jsbarcode-textmargin="0"
+                                jsbarcode-fontoptions="bold"
+                                jsbarcode-height="50"
+                                jsbarcode-displayValue="false"
+                                jsbarcode-fontSize="24">
+                            </svg>
+                        <div style="margin-top: 5px; font-weight: normal; font-size: 12px; text-align: left;">${ssccCode}</div>
+                       <div style="display: flex; justify-content: space-between; font-size: 8px; padding: 0 5px;text-align: left; margin-top: 10px;">
+                            <strong>Pallet: ${palletInfo.pallet_no}</strong>
+                            <strong> Page ${index + 1}/${ssccItems.length}</strong>
+                        </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>SSCC Label - ${palletInfo.pallet_no}</title>
+                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+                    <style>
+                        @page { size: 100mm 150mm; margin: 0; }
+                        body { margin: 0; font-family: Arial, sans-serif; background: #ccc; }
+                        .label-page {
+                            width: 100mm; height: 148mm; 
+                            background: white;
+                            border: 1px solid black; box-sizing: border-box;
+                            display: flex; flex-direction: column;
+                            page-break-after: always;
+                            margin: 10px auto; 
+                        }
+                        .label-page:last-child { page-break-after: auto; }
+                        
+                        .row { display: flex; border-bottom: 1px solid black; }
+                        .col { flex: 1; padding: 5px; border-right: 1px solid black; overflow: hidden; }
+                        .col:last-child { border-right: none; }
+                        .label-title { font-size: 10px; color: #333; margin-bottom: 4px; text-transform: uppercase; font-weight: bold; }
+                        .label-content { font-weight: bold; font-size: 12px; word-wrap: break-word; line-height: 1.2; }
+                        .label-title_PO { font-size: 10px; color: #333; margin-bottom: 4px; text-transform: uppercase; font-weight: bold; }
+                        .label-content_PO { font-weight: bold; font-size: 50px; word-wrap: break-word; line-height: 1.2; }
+                        .po-section { padding: 5px; border-bottom: 1px solid black; }
+                        .sku-section { padding: 5px; border-bottom: 1px solid black; flex-grow: 1; }
+                        .sscc-section { text-align: center; padding: 10px; margin-top: auto; }
+                        .sscc-section .label-title { font-size: 10px; color: #333; margin-bottom: 4px; text-transform: uppercase; font-weight: bold;text-align: left; }
+                        .SKU-cell { text-align: left; font-weight: bold;font-size: 30px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+                        th, td { border: 1px solid #ccc; padding: 6px; text-align: center; font-size: 12px; }
+                        
+                        @media print {
+                            body { background: none; }
+                            .label-page { border: none; margin: 0; height: 150mm; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${labelsHtml}
+                    <script>
+                        window.onload = function() {
+                            JsBarcode(".barcode").init();
+                            setTimeout(() => {
+                                window.print();
+                            }, 500);
+                        }
+                    <\/script>
+                </body>
+                </html>
+            `;
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+        }
+
+        function printMultipleSmallLabels(palletInfo, ssccItems) {
+            const printWindow = window.open('', '_blank');
+            
+            const labelsHtml = ssccItems.map((ssccItem, index) => {
+                const ssccCode = ssccItem.sscc || ssccItem.barcode || ''; 
+                const po = jobSelect.value;
+
+                return `
+                    <div class="label-page">
+                        
+                        <table class="info-table">
+                            <tr>
+                                <td><strong>SSCC:</strong></td>
+                                <td><strong>PO:</strong> ${ssccItem.master_delivery}</td>
+                                <td><strong>SKU:</strong> ${ssccItem.sku}</td>
+                                <td><strong>Quantity:</strong> ${ssccItem.qty}</td>
+                            </tr>
+                        </table>
+                        <div class="barcode-container">
+                            <svg class="barcode"
+                                jsbarcode-format="CODE128"
+                                jsbarcode-value="${ssccCode}"
+                                jsbarcode-textmargin="0"
+                                jsbarcode-fontoptions="bold"
+                                jsbarcode-height="40"
+                                jsbarcode-displayValue="false"
+                                jsbarcode-width="1.5"
+                                jsbarcode-margin="0">
+                            </svg>
+                            <div style="margin-top: 5px; font-weight: normal; font-size: 12px; text-align: left;">${ssccCode}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Small Labels - ${palletInfo.pallet_no}</title>
+                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+                    <style>
+                        @page { size: 100mm 30mm; margin: 0; }
+                        body { margin: 0; font-family: Arial, sans-serif; background: #ccc; }
+                        .label-page {
+                            width: 100mm; height: 30mm;
+                            background: white;
+                            box-sizing: border-box;
+                            display: flex; flex-direction: column;
+                            page-break-after: always;
+                            margin: 5px auto; 
+                            padding: 2px 5px;
+                            overflow: hidden;
+                        }
+                        .label-page:last-child { page-break-after: auto; }
+                        
+                        .info-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 2px; }
+                        .info-table td { padding: 1px 5px; white-space: nowrap; }
+                        
+                        .barcode-container { text-align: center; margin-top: auto; overflow: hidden; }
+                        svg.barcode { max-width: 100%; height: auto; }
+
+                        @media print {
+                            body { background: none; }
+                            .label-page { margin: 0; border: none; height: 30mm; page-break-after: always; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${labelsHtml}
+                    <script>
+                        window.onload = function() {
+                            JsBarcode(".barcode").init();
+                            setTimeout(() => {
+                                window.print();
+                            }, 500);
+                        }
+                    <\/script>
+                </body>
+                </html>
+            `;
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+        }
+
+        // Sự kiện khi thay đổi combobox
+        jobSelect.addEventListener('change', loadData);
+        
+        // Sự kiện nút refresh
+        refreshBtn.addEventListener('click', loadData);
+
+        // --- Logic hiển thị thông báo từ Scanner ---
+        const toastContainer = document.getElementById('toastContainer');
+        const notificationBadge = document.getElementById('notification-badge');
+
+        function fetchLogs() {
+            fetch('/api/get_logs')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.logs) {
+                        data.logs.forEach(log => {
+                            if (!log.is_read) {
+                                createToast(log);
+                                markLogAsRead(log.id);
+                            }
+                        });
+                    }
+                })
+                .catch(err => console.error('Lỗi lấy log:', err));
+        }
+
+        function createToast(log) {
+            const toastId = 'toast-' + log.id;
+            const html = `
+                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header bg-primary text-white">
+                        <strong class="me-auto"><i class="bi bi-bell-fill"></i> Thông báo Scanner</strong>
+                        <small>${log.created_at}</small>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                    <div class="toast-body">
+                        <strong>${log.username}:</strong> ${log.message}
+                    </div>
+                </div>
+            `;
+            toastContainer.insertAdjacentHTML('beforeend', html);
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { delay: 10000 }); // Hiện 10 giây
+            toast.show();
+            
+            // Xóa khỏi DOM sau khi ẩn để tránh rác
+            toastElement.addEventListener('hidden.bs.toast', () => {
+                toastElement.remove();
+            });
+        }
+
+        function markLogAsRead(id) {
+            fetch('/api/mark_read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            }).catch(console.error);
+        }
+
+        function updateNotificationBadge() {
+            fetch('/api/unread_count')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.count > 0) {
+                        notificationBadge.textContent = data.count > 99 ? '99+' : data.count;
+                        notificationBadge.classList.remove('d-none');
+                    } else {
+                        notificationBadge.classList.add('d-none');
+                    }
+                })
+                .catch(err => console.error('Lỗi kiểm tra thông báo mới:', err));
+        }
+
+        // Kiểm tra thông báo (toast) mỗi 3 giây
+        setInterval(fetchLogs, 3000);
+
+        // Kiểm tra trạng thái (badge) mỗi 10 giây
+        setInterval(updateNotificationBadge, 10000);
+
+        // Kiểm tra ngay khi tải trang
+        fetchLogs();
+        updateNotificationBadge();
     </script>
 </body>
 </html>
