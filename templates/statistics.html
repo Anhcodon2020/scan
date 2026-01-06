@@ -44,6 +44,7 @@
                     <th>Pallet 1.9m</th>
                     <th>Loose Carton</th>
                     <th>Tổng Pallet</th>
+                    <th>Tổng Thùng (Box)</th>
                 </tr>
             </thead>
             <tbody>
@@ -55,6 +56,7 @@
                     <td style="color: #856404;">{{ grand_total['1.9'] }}</td>
                     <td style="color: #856404;">{{ grand_total['loose'] }}</td>
                     <td class="total-col" style="color: #856404;">{{ grand_total['total'] }}</td>
+                    <td class="total-col" style="color: #856404;">{{ grand_total['total_box'] }}</td>
                 </tr>
 
                 {% for (job_no, job_type), counts in stats.items() %}
@@ -66,10 +68,11 @@
                     <td>{{ counts['1.9'] }}</td>
                     <td>{{ counts['loose'] }}</td>
                     <td class="total-col">{{ counts['total'] }}</td>
+                    <td class="total-col">{{ counts['total_box'] }}</td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
+                    <td colspan="8" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -161,7 +164,7 @@
 
                 if (!totalRow) return;
 
-                let sum12 = 0, sum16 = 0, sum19 = 0, sumLoose = 0, sumTotal = 0;
+                let sum12 = 0, sum16 = 0, sum19 = 0, sumLoose = 0, sumTotal = 0, sumBox = 0;
 
                 rows.forEach(row => {
                     // Bỏ qua dòng tổng cộng và các dòng bị ẩn
@@ -175,6 +178,7 @@
                         sum19 += parseInt(cells[4].innerText) || 0;
                         sumLoose += parseInt(cells[5].innerText) || 0;
                         sumTotal += parseInt(cells[6].innerText) || 0;
+                        sumBox += parseInt(cells[7].innerText) || 0;
                     }
                 });
 
@@ -185,6 +189,7 @@
                 totalRow.cells[3].innerText = sum19;
                 totalRow.cells[4].innerText = sumLoose;
                 totalRow.cells[5].innerText = sumTotal;
+                totalRow.cells[6].innerText = sumBox;
             }
         });
     </script>

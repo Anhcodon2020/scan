@@ -378,9 +378,73 @@ def finish_pallet():
 @app.route('/stats')
 def stats():
     if 'user' not in session: return redirect(url_for('login'))
-    # Dữ liệu mẫu để tránh lỗi template khi chưa có logic thống kê
-    dummy_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0}
-    return render_template('statistics.html', stats={}, grand_total=dummy_total, remain_stats={})
+    
+    # 1. Thống kê Pallet đã scan (Group by Job Type, Pallet Type)
+    # Lấy danh sách các pallet unique (đã có pallet_no)
+    pallets = db.session.query(
+        Scanfile.jobno,
+        Scanfile.jobno_type,
+        Scanfile.pallet,
+        Scanfile.pallet_type,
+        func.count(Scanfile.id)
+    ).filter(
+        Scanfile.pallet != '',
+        Scanfile.pallet != None
+    ).group_by(
+        Scanfile.jobno,
+        Scanfile.jobno_type,
+        Scanfile.pallet,
+        Scanfile.pallet_type
+    ).all()
+
+    stats_data = {}
+    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0}
+
+    for job_no, job_type, pallet_no, p_type, sscc_count in pallets:
+        # Key: (Job No, Job Type)
+        key = (job_no, job_type) 
+        
+        if key not in stats_data:
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0}
+        
+        p_type_str = str(p_type) if p_type else ''
+        
+        # Nếu là loose hoặc loosecarton thì tính theo số lượng SSCC, ngược lại tính là 1 pallet
+        increment = sscc_count if 'loose' in p_type_str.lower() else 1
+        
+        if '1.2' in p_type_str:
+            stats_data[key]['1.2'] += increment
+            grand_total['1.2'] += increment
+        elif '1.6' in p_type_str:
+            stats_data[key]['1.6'] += increment
+            grand_total['1.6'] += increment
+        elif '1.9' in p_type_str:
+            stats_data[key]['1.9'] += increment
+            grand_total['1.9'] += increment
+        else:
+            stats_data[key]['loose'] += increment
+            grand_total['loose'] += increment
+            
+        stats_data[key]['total'] += increment
+        grand_total['total'] += increment
+        stats_data[key]['total_box'] += sscc_count
+        grand_total['total_box'] += sscc_count
+
+    # 2. Thống kê hàng tồn (Chưa scan)
+    remain_query = db.session.query(
+        Scanfile.jobno,
+        Scanfile.jobno_type,
+        func.count(Scanfile.id)
+    ).filter(
+        (Scanfile.pallet == '') | (Scanfile.pallet == None)
+    ).group_by(Scanfile.jobno, Scanfile.jobno_type).all()
+
+    remain_stats = {}
+    for job_no, job_type, count in remain_query:
+        key = (job_no, job_type)
+        remain_stats[key] = count
+
+    return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats)
 
 @app.route('/print-label')
 def print_label():
