@@ -460,8 +460,12 @@ def get_print_data():
         # Nhóm các SKU lại theo từng pallet
         pallets_data = {}
         for row in sku_details_query:
-            if row.pallet not in pallets_data:
-                pallets_data[row.pallet] = {
+            # Tách riêng Tem Nhỏ và Tem Thường trong cùng 1 pallet
+            is_small = (row.tag_label == 'Y')
+            key = (row.pallet, is_small)
+
+            if key not in pallets_data:
+                pallets_data[key] = {
                     'pallet_no': row.pallet,
                     'pallet_type': row.pallet_type,
                     'jobscan': row.jobscan,
@@ -474,23 +478,21 @@ def get_print_data():
                     'master_ctl': row.master_ctl,
                     'st_zip': row.st_zip,
                     'skus': [],
-                    'qty': 0, # Tổng số thùng của pallet
-                    'has_small_label': False
+                    'qty': 0, # Tổng số thùng của nhóm này
+                    'has_small_label': is_small
                 }
             
             master_item = MasterData.query.filter_by(sku=row.sku).first()
             sku_weight = master_item.weight if master_item and master_item.weight else 0
 
-            pallets_data[row.pallet]['skus'].append({
+            pallets_data[key]['skus'].append({
                 'sku': row.sku,
                 'qty': row.sscc_count,
                 'tag_label': row.tag_label,
                 'sku_weight': sku_weight
             })
-            # Cập nhật tổng số lượng và cờ tem nhỏ
-            pallets_data[row.pallet]['qty'] += row.sscc_count
-            if row.tag_label == 'Y':
-                pallets_data[row.pallet]['has_small_label'] = True
+            # Cập nhật tổng số lượng
+            pallets_data[key]['qty'] += row.sscc_count
             
         items = list(pallets_data.values())
             
