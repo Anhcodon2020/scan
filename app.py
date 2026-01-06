@@ -5,6 +5,7 @@ import csv
 import io
 from dotenv import load_dotenv
 from datetime import datetime
+import pandas as pd
 
 # Nạp biến môi trường từ file .env
 load_dotenv()
@@ -375,6 +376,45 @@ def finish_pallet():
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/unlock_pallet', methods=['POST'])
+def unlock_pallet():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phiên đăng nhập hết hạn'}), 401
+    
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Chỉ Admin mới có quyền mở khóa Pallet.'}), 403
+
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+
+    if not job_type or not pallet_no:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    try:
+        # 1. Xóa khỏi bảng Load (bảng quản lý trạng thái khóa/in tem)
+        Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).delete()
+
+        # 2. Cập nhật trạng thái finish trong Scanfile về NULL
+        Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).update(
+            {'finish': None}, 
+            synchronize_session=False
+        )
+        
+        # 3. Ghi log
+        db.session.add(Log(
+            username=session.get('user'),
+            action='UNLOCK_PALLET',
+            message=f"Đã mở khóa Pallet {pallet_no}",
+            is_read=False
+        ))
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã mở khóa Pallet {pallet_no} thành công.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/stats')
 def stats():
     if 'user' not in session: return redirect(url_for('login'))
@@ -657,6 +697,199 @@ def export_pallet_data():
         return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=pallet_data_{job_type}.csv"})
     except Exception as e:
         return f"Lỗi: {str(e)}", 500
+
+@app.route('/importshipment')
+def import_shipment_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('importshipment.html')
+
+@app.route('/api/outbound/search', methods=['GET'])
+def search_outbound():
+    jobno = request.args.get('jobno')
+    if not jobno: return jsonify({'success': False, 'message': 'Thiếu Job No'})
+    
+    try:
+        # Tìm container trong bảng outbound, sắp xếp theo ngày đóng hàng
+        # Giả định cột ngày là packing_date hoặc created_at
+        query = text("""
+            SELECT DISTINCT container, packing_date 
+            FROM outbound 
+            WHERE jobno = :jobno AND container IS NOT NULL AND container != ''
+            ORDER BY packing_date ASC
+        """)
+        result = db.session.execute(query, {'jobno': jobno}).fetchall()
+        
+        containers = [{'container': r[0], 'packing_date': str(r[1]) if r[1] else ''} for r in result]
+        return jsonify({'success': True, 'containers': containers})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/import_shipment', methods=['POST'])
+def import_shipment_api():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    shipment_val = request.form.get('shipment')
+    file = request.files.get('file')
+    
+    if not file: return jsonify({'success': False, 'message': 'Chưa chọn file'})
+    
+    try:
+        # Đọc file Excel
+        df = pd.read_excel(file)
+        # Chuẩn hóa tên cột (xóa khoảng trắng thừa)
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        count = 0
+        for index, row in df.iterrows():
+            jobno = str(row.get('JOB NO', '')).strip()
+            if not jobno or jobno.lower() == 'nan': continue
+            
+            pallet_no = str(row.get('Pallet number', '')).strip()
+            
+            # Tìm thông tin từ bảng outbound (cont, seal, loosecarton)
+            # Dựa vào jobno và palletnumber
+            outbound_q = text("""
+                SELECT container, seal, loosecarton 
+                FROM outbound 
+                WHERE jobno = :jobno AND palletnumber = :pallet_no
+                LIMIT 1
+            """)
+            out_res = db.session.execute(outbound_q, {'jobno': jobno, 'pallet_no': pallet_no}).fetchone()
+            
+            cont = out_res[0] if out_res else None
+            seal = out_res[1] if out_res else None
+            loose = out_res[2] if out_res else None
+            
+            # Insert vào bảng importshipment
+            insert_q = text("""
+                INSERT INTO importshipment (
+                    jobno, relese_key, ponumber, sku, finaldc, hubdc, systempallet, 
+                    measurement, weight, cbm_pallet, carton, palletnumber, 
+                    cont, seal, shipmentorder, loosecarton, created_at, created_by
+                ) VALUES (
+                    :jobno, :relese_key, :ponumber, :sku, :finaldc, :hubdc, :systempallet,
+                    :measurement, :weight, :cbm_pallet, :carton, :palletnumber,
+                    :cont, :seal, :shipmentorder, :loosecarton, NOW(), :user
+                )
+            """)
+            
+            db.session.execute(insert_q, {
+                'jobno': jobno,
+                'relese_key': row.get('Release Key'),
+                'ponumber': row.get('PO-NUMBER'),
+                'sku': row.get('SKU'),
+                'finaldc': row.get('ToFinalDC_ID'),
+                'hubdc': row.get('ToHubDC_ID'),
+                'systempallet': row.get('System Pallet number'),
+                'measurement': row.get('MEASUREMENT'),
+                'weight': row.get('G.WEIGHT'),
+                'cbm_pallet': row.get('cbm'),
+                'carton': row.get('ctn'),
+                'palletnumber': pallet_no,
+                'cont': cont,
+                'seal': seal,
+                'shipmentorder': shipment_val,
+                'loosecarton': loose,
+                'user': session.get('user')
+            })
+            count += 1
+            
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã import thành công {count} dòng.'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Lỗi: {str(e)}'})
+
+@app.route('/api/delete_scan', methods=['POST'])
+def delete_scan():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+    pallet = data.get('pallet')
+    sku = data.get('sku')
+    quantity = data.get('quantity')
+    
+    if not job_type or not pallet or not sku:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+    
+    # Kiểm tra xem pallet có bị khóa không
+    is_locked = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet).first()
+    if is_locked:
+        return jsonify({'success': False, 'message': 'Pallet đã bị khóa, không thể xóa hàng.'}), 400
+
+    try:
+        # Query tìm các item đã scan vào pallet này
+        query = Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet == pallet,
+            Scanfile.sku == sku
+        )
+        
+        count = 0
+        # Nếu có nhập số lượng cụ thể
+        if quantity and str(quantity).strip().isdigit() and int(quantity) > 0:
+            qty_limit = int(quantity)
+            # Lấy danh sách ID cần reset (ưu tiên xóa những cái mới scan nhất - LIFO)
+            items_to_reset = query.order_by(Scanfile.time_scan.desc()).limit(qty_limit).all()
+            
+            if not items_to_reset:
+                return jsonify({'success': False, 'message': 'Không tìm thấy dữ liệu để xóa'}), 404
+                
+            ids = [item.id for item in items_to_reset]
+            
+            # Reset trạng thái về NULL (trở thành hàng chờ scan)
+            Scanfile.query.filter(Scanfile.id.in_(ids)).update({
+                'pallet': None,
+                'pallet_type': None,
+                'userscan': None,
+                'time_scan': None
+            }, synchronize_session=False)
+            
+            count = len(ids)
+        else:
+            # Nếu không nhập số lượng -> Xóa HẾT SKU đó trong Pallet
+            count = query.update({
+                'pallet': None,
+                'pallet_type': None,
+                'userscan': None,
+                'time_scan': None
+            }, synchronize_session=False)
+            
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã xóa {count} thùng SKU {sku} khỏi Pallet {pallet}.'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/delete_sku', methods=['POST'])
+def delete_sku():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    data = request.json
+    sku = data.get('sku')
+    job_type = data.get('job_type')
+    
+    if not sku or not job_type:
+        return jsonify({'success': False, 'message': 'Thiếu SKU hoặc Job Type'}), 400
+    
+    try:
+        count = Scanfile.query.filter(
+            Scanfile.sku == sku,
+            Scanfile.jobno_type == job_type,
+            (Scanfile.pallet == None) | (Scanfile.pallet == ''),
+            (Scanfile.pallet_type == None) | (Scanfile.pallet_type == ''),
+            (Scanfile.finish == None) | (Scanfile.finish == '')
+        ).delete(synchronize_session=False)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã xóa {count} dòng SKU {sku}.'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Lỗi: {str(e)}'}), 500
 
 if __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---
