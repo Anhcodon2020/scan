@@ -101,12 +101,17 @@
         const refreshBtn = document.getElementById('refreshBtn');
         let currentData = []; // Biến toàn cục để lưu dữ liệu hiện tại
 
-        function loadData() {
+        function loadData(isSilent = false) {
+            // Nếu gọi từ sự kiện click, isSilent là Event object -> gán về false
+            if (typeof isSilent !== 'boolean') isSilent = false;
+
             const jobType = jobSelect.value;
             if (!jobType) return;
 
-            tableBody.innerHTML = '<tr><td colspan="6" class="py-4"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Đang tải dữ liệu...</div></td></tr>';
-            refreshBtn.disabled = true;
+            if (!isSilent) {
+                tableBody.innerHTML = '<tr><td colspan="9" class="py-4"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Đang tải dữ liệu...</div></td></tr>';
+                refreshBtn.disabled = true;
+            }
 
             fetch('/api/get_print_data', {
                 method: 'POST',
@@ -126,7 +131,9 @@
             .catch(err => {
                 refreshBtn.disabled = false;
                 console.error(err);
-                tableBody.innerHTML = '<tr><td colspan="9" class="text-danger py-3">Lỗi kết nối đến máy chủ</td></tr>';
+                if (!isSilent) {
+                    tableBody.innerHTML = '<tr><td colspan="9" class="text-danger py-3">Lỗi kết nối đến máy chủ</td></tr>';
+                }
             });
         }
 
@@ -184,19 +191,30 @@
 
                 const note = item.has_small_label ? '<span class="badge bg-info text-dark">Tem nhỏ</span>' : '';
 
-                // Nút in SSCC chỉ hiện nếu không phải tem nhỏ (tag_label="N")
-                const btnSSCC = !item.has_small_label ? `
-                    <button class="btn btn-outline-dark btn-sm ms-1" onclick="printSSCCLabel(${originalIndex}, this)">
-                        <i class="bi bi-upc-scan"></i> SSCC
-                    </button>
-                ` : '';
+                let actionHtml = '';
+                if (item.is_completed) {
+                    const btnSSCC = !item.has_small_label ? `
+                        <button class="btn btn-outline-dark btn-sm ms-1" onclick="printSSCCLabel(${originalIndex}, this)">
+                            <i class="bi bi-upc-scan"></i> SSCC
+                        </button>
+                    ` : '';
 
-                // Nút in Tem Nhỏ chỉ hiện nếu là tem nhỏ (tag_label="Y")
-                const btnSmallLabel = item.has_small_label ? `
-                    <button class="btn btn-warning btn-sm ms-1" onclick="printSmallLabel(${originalIndex}, this)">
-                        <i class="bi bi-tag"></i> Tem Nhỏ
-                    </button>
-                ` : '';
+                    const btnSmallLabel = item.has_small_label ? `
+                        <button class="btn btn-warning btn-sm ms-1" onclick="printSmallLabel(${originalIndex}, this)">
+                            <i class="bi bi-tag"></i> Tem Nhỏ
+                        </button>
+                    ` : '';
+
+                    actionHtml = `
+                        <button class="btn btn-primary btn-sm" onclick="printLabel(${originalIndex})">
+                            <i class="bi bi-printer"></i> In Tem
+                        </button>
+                        ${btnSSCC}
+                        ${btnSmallLabel}
+                    `;
+                } else {
+                    actionHtml = `<span class="text-warning fw-bold"><i class="bi bi-lock-fill"></i> Đang scan...</span>`;
+                }
 
                 html += `
                     <tr>
@@ -209,11 +227,7 @@
                         <td>${note}</td>
                         <td>${statusBadge}</td>
                         <td>
-                            <button class="btn btn-primary btn-sm" onclick="printLabel(${originalIndex})">
-                                <i class="bi bi-printer"></i> In Tem
-                            </button>
-                            ${btnSSCC}
-                            ${btnSmallLabel}
+                            ${actionHtml}
                         </td>
                     </tr>
                 `;
@@ -742,6 +756,13 @@
         
         // Sự kiện nút refresh
         refreshBtn.addEventListener('click', loadData);
+
+        // Tự động làm mới dữ liệu mỗi 30 giây
+        setInterval(() => {
+            if (jobSelect.value && !document.hidden) {
+                loadData(true); // Chế độ im lặng (không hiện spinner)
+            }
+        }, 30000);
 
         // --- Logic hiển thị thông báo từ Scanner ---
         const toastContainer = document.getElementById('toastContainer');

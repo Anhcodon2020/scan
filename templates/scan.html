@@ -94,6 +94,7 @@
             <div style="margin-top:5px;"><strong>Pallet:</strong> <span id="lblPalletDisplay" style="font-size:1.2em; color:#007bff; font-weight:bold;"></span> (<span id="lblPalletTypeDisplay"></span>)</div>
             <button id="finishPalletBtn" onclick="finishPallet()" style="margin-top: 10px; width: 100%; padding: 8px; background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">✅ Báo Xong Pallet</button>
             <button id="unlockPalletBtn" onclick="unlockPallet()" style="display: none; margin-top: 10px; width: 100%; padding: 8px; background-color: #ffc107; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">🔓 Mở khóa Pallet</button>
+            <button id="reprintPalletBtn" onclick="requestReprint()" style="display: none; margin-top: 10px; width: 100%; padding: 8px; background-color: #17a2b8; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">🖨️ Yêu cầu in lại</button>
         </div>
 
         <div style="margin-bottom: 15px; display: flex; align-items: center; background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba;">
@@ -130,6 +131,9 @@
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
             <button id="btnClearQueue" style="flex: 1; padding: 12px; background-color: #dc3545; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold;">🚫 Xóa Hàng Đợi</button>
             <button onclick="document.getElementById('scanList').innerHTML = ''" style="flex: 1; padding: 12px; background-color: #6c757d; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold;">🗑️ Xóa List</button>
+            {% if session.get('role') == 'admin' %}
+            <button onclick="showPendingPallets()" style="flex: 1; padding: 12px; background-color: #ffc107; color: #333; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; font-weight: bold;">📋 Pallet chưa khóa</button>
+            {% endif %}
         </div>
         <div class="scan-list" id="scanList">
             <!-- Kết quả quét sẽ hiện ở đây -->
@@ -257,6 +261,71 @@
             .catch(e => document.getElementById('modalBody').innerText = 'Lỗi: ' + e);
         }
 
+        function showPendingPallets() {
+            document.getElementById('modalTitle').innerText = 'Danh sách Pallet chưa khóa (Đang làm)';
+            document.getElementById('modalBody').innerHTML = 'Đang tải...';
+            modal.style.display = "block";
+
+            fetch('/api/get_pending_pallets')
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    if (data.pallets.length === 0) {
+                        document.getElementById('modalBody').innerHTML = '<p style="text-align:center; color:green;">Không có pallet nào đang dở dang.</p>';
+                        return;
+                    }
+                    
+                    // Lấy danh sách Job Type duy nhất để tạo bộ lọc
+                    const uniqueJobs = [...new Set(data.pallets.map(p => p.job_type))];
+
+                    let html = `
+                        <div style="margin-bottom: 15px;">
+                            <label for="filterPendingJob" style="font-weight:bold; margin-right: 10px;">Lọc theo Job:</label>
+                            <select id="filterPendingJob" onchange="filterPendingTable()" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                                <option value="ALL">-- Tất cả --</option>
+                                ${uniqueJobs.map(j => `<option value="${j}">${j}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="modal-table" id="pendingTable">
+                                <thead>
+                                    <tr>
+                                        <th>Job Type</th>
+                                        <th>Pallet</th>
+                                        <th>SL</th>
+                                        <th>Scan cuối</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                    data.pallets.forEach(p => {
+                        html += `<tr data-job="${p.job_type}">
+                            <td>${p.job_type}</td>
+                            <td style="font-weight:bold; color:#007bff;">${p.pallet}</td>
+                            <td style="text-align:center;">${p.qty}</td>
+                            <td style="font-size:0.9em;">${p.last_scan}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                    document.getElementById('modalBody').innerHTML = html;
+                } else {
+                    document.getElementById('modalBody').innerText = 'Lỗi: ' + data.message;
+                }
+            })
+            .catch(e => document.getElementById('modalBody').innerText = 'Lỗi kết nối: ' + e);
+        }
+
+        function filterPendingTable() {
+            const filterVal = document.getElementById('filterPendingJob').value;
+            const rows = document.querySelectorAll('#pendingTable tbody tr');
+            rows.forEach(row => {
+                if (filterVal === 'ALL' || row.getAttribute('data-job') === filterVal) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
         function unlockPallet() {
             const jobType = jobTypeSelect.value;
             const palletNo = palletSelect.value;
@@ -288,6 +357,31 @@
                         if (data.success) fetchPalletDetails(); // Cập nhật lại trạng thái nút
                     })
                     .catch(err => Swal.fire('Lỗi!', 'Đã xảy ra lỗi kết nối: ' + err, 'error'));
+                }
+            });
+        }
+
+        function requestReprint() {
+            const jobType = jobTypeSelect.value;
+            const palletNo = palletSelect.value;
+
+            Swal.fire({
+                title: 'Yêu cầu in lại?',
+                text: `Gửi yêu cầu in lại tem cho Pallet ${palletNo}? (Trạng thái sẽ chuyển về Chờ in)`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Đồng ý',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/api/request_reprint', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ job_type: jobType, pallet_no: palletNo })
+                    })
+                    .then(res => res.json())
+                    .then(data => Swal.fire(data.success ? 'Thành công' : 'Lỗi', data.message, data.success ? 'success' : 'error'))
+                    .catch(err => Swal.fire('Lỗi', 'Lỗi kết nối: ' + err, 'error'));
                 }
             });
         }
@@ -353,19 +447,25 @@
 
                     const finishBtn = document.getElementById('finishPalletBtn');
                     const unlockBtn = document.getElementById('unlockPalletBtn');
+                    const reprintBtn = document.getElementById('reprintPalletBtn');
 
                     if (data.is_locked) {
                         lblPallet.innerHTML = pallet + lockHtml;
                         if (lblPalletDisplay) lblPalletDisplay.innerHTML = pallet + lockHtml;
                         // Ẩn nút "Báo xong", hiện nút "Mở khóa"
                         if(finishBtn) finishBtn.style.display = 'none';
-                        if(unlockBtn) unlockBtn.style.display = (userRole === 'admin') ? 'block' : 'none';
+                        
+                        // Chỉ Admin mới thấy nút Mở khóa và In lại
+                        const isAdmin = (userRole === 'admin');
+                        if(unlockBtn) unlockBtn.style.display = isAdmin ? 'block' : 'none';
+                        if(reprintBtn) reprintBtn.style.display = isAdmin ? 'block' : 'none';
                     } else {
                         lblPallet.innerText = pallet;
                         if (lblPalletDisplay) lblPalletDisplay.innerText = pallet;
                         // Hiện nút "Báo xong", ẩn nút "Mở khóa"
                         if(finishBtn) finishBtn.style.display = 'block';
                         if(unlockBtn) unlockBtn.style.display = 'none';
+                        if(reprintBtn) reprintBtn.style.display = 'none';
                     }
                     
                     // Hiển thị danh sách SKU

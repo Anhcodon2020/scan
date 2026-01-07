@@ -560,7 +560,8 @@ def get_print_data():
             func.max(Scanfile.master_add4).label('master_add4'),
             func.max(Scanfile.master_delivery).label('master_delivery'),
             func.max(Scanfile.master_ctl).label('master_ctl'),
-            func.max(Scanfile.st_zip).label('st_zip')
+            func.max(Scanfile.st_zip).label('st_zip'),
+            func.max(Scanfile.finish).label('finish')
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
@@ -592,7 +593,8 @@ def get_print_data():
                     'st_zip': row.st_zip,
                     'skus': [],
                     'qty': 0, # Tổng số thùng của nhóm này
-                    'has_small_label': is_small
+                    'has_small_label': is_small,
+                    'is_completed': (row.finish == 'COMPLETED')
                 }
             
             master_item = MasterData.query.filter_by(sku=row.sku).first()
@@ -639,7 +641,12 @@ def get_sscc_data():
     pallet_no = data.get('pallet_no')
     
     try:
-        rows = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).all()
+        # Chỉ lấy dữ liệu nếu Pallet đã hoàn thành (COMPLETED)
+        rows = Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet == pallet_no,
+            Scanfile.finish == 'COMPLETED'
+        ).all()
         items = []
         for r in rows:
             items.append({
@@ -680,7 +687,8 @@ def export_pallet_data():
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
-            Scanfile.pallet != None
+            Scanfile.pallet != None,
+            Scanfile.finish == 'COMPLETED'
         ).group_by(
             Scanfile.pallet,
             Scanfile.pallet_type,
@@ -978,6 +986,79 @@ def bulk_update():
 
         db.session.commit()
         return jsonify({'success': True, 'message': f'Đã cập nhật {len(ids)} thùng vào Pallet {pallet_no}', 'sku': sku})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/get_pending_pallets', methods=['GET'])
+def get_pending_pallets():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    try:
+        # Lấy danh sách Pallet đã có hàng nhưng chưa hoàn thành (finish != 'COMPLETED')
+        results = db.session.query(
+            Scanfile.jobno_type,
+            Scanfile.pallet,
+            func.count(Scanfile.id).label('qty'),
+            func.max(Scanfile.time_scan).label('last_scan')
+        ).filter(
+            Scanfile.pallet != '',
+            Scanfile.pallet != None,
+            (Scanfile.finish != 'COMPLETED') | (Scanfile.finish == None)
+        ).group_by(
+            Scanfile.jobno_type, 
+            Scanfile.pallet
+        ).order_by(Scanfile.jobno_type, Scanfile.pallet).all()
+
+        data = [{
+            'job_type': r.jobno_type,
+            'pallet': r.pallet,
+            'qty': r.qty,
+            'last_scan': r.last_scan.strftime('%H:%M %d/%m') if r.last_scan else ''
+        } for r in results]
+
+        return jsonify({'success': True, 'pallets': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/request_reprint', methods=['POST'])
+def request_reprint():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+
+    if not job_type or not pallet_no:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    try:
+        # Kiểm tra Pallet đã hoàn thành chưa
+        scan_check = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no, finish='COMPLETED').first()
+        if not scan_check:
+             return jsonify({'success': False, 'message': 'Pallet chưa hoàn thành hoặc không tồn tại.'}), 400
+
+        # Cập nhật hoặc tạo mới trong bảng Load (để hiện lại bên Printer)
+        load_entry = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).first()
+        
+        if load_entry:
+            load_entry.status = 'PENDING'
+        else:
+            count = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).count()
+            new_load = Load(
+                jobno_type=job_type,
+                pallet_no=pallet_no,
+                pallet_type=scan_check.pallet_type,
+                quantity=count,
+                created_by=session.get('user'),
+                status='PENDING'
+            )
+            db.session.add(new_load)
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã gửi yêu cầu in lại cho Pallet {pallet_no}.'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
