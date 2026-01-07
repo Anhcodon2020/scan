@@ -14,6 +14,7 @@
     </style>
     <!-- Thư viện in PDF -->
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <!-- Navbar đơn giản -->
@@ -99,6 +100,7 @@
         const filterSelect = document.getElementById('filterSelect');
         const tableBody = document.getElementById('tableBody');
         const refreshBtn = document.getElementById('refreshBtn');
+        const userRole = "{{ session.get('role') }}";
         let currentData = []; // Biến toàn cục để lưu dữ liệu hiện tại
 
         function loadData(isSilent = false) {
@@ -205,15 +207,31 @@
                         </button>
                     ` : '';
 
+                    let btnUnlock = '';
+                    if (userRole === 'admin') {
+                        btnUnlock = `
+                            <button class="btn btn-danger btn-sm ms-1" onclick="unlockPallet(${originalIndex})">
+                                <i class="bi bi-unlock-fill"></i> Mở khóa
+                            </button>
+                        `;
+                    }
+
                     actionHtml = `
                         <button class="btn btn-primary btn-sm" onclick="printLabel(${originalIndex})">
                             <i class="bi bi-printer"></i> In Tem
                         </button>
                         ${btnSSCC}
                         ${btnSmallLabel}
+                        ${btnUnlock}
                     `;
                 } else {
-                    actionHtml = `<span class="text-warning fw-bold"><i class="bi bi-lock-fill"></i> Đang scan...</span>`;
+                    if (userRole === 'admin' || userRole === 'printer') {
+                        actionHtml = `<button class="btn btn-danger btn-sm" onclick="forceFinishPallet(${originalIndex})">
+                                        <i class="bi bi-lock-fill"></i> Khóa
+                                      </button>`;
+                    } else {
+                        actionHtml = `<span class="text-warning fw-bold"><i class="bi bi-lock-fill"></i> Đang scan...</span>`;
+                    }
                 }
 
                 html += `
@@ -233,6 +251,78 @@
                 `;
             });
             tableBody.innerHTML = html;
+        }
+
+        function forceFinishPallet(index) {
+            const item = currentData[index];
+            if (!item) return;
+            const jobType = jobSelect.value;
+
+            Swal.fire({
+                title: 'Khóa Pallet?',
+                text: `Xác nhận khóa Pallet ${item.pallet_no} để in tem?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Đồng ý',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/api/finish_pallet', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            job_type: jobType, 
+                            pallet_no: item.pallet_no, 
+                            pallet_type: item.pallet_type
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire('Thành công', data.message, 'success');
+                            loadData(); 
+                        } else {
+                            Swal.fire('Lỗi', data.message, 'error');
+                        }
+                    })
+                    .catch(e => Swal.fire('Lỗi', 'Lỗi kết nối: ' + e, 'error'));
+                }
+            });
+        }
+
+        function unlockPallet(index) {
+            const item = currentData[index];
+            if (!item) return;
+            const jobType = jobSelect.value;
+
+            Swal.fire({
+                title: 'Mở khóa Pallet?',
+                text: `Bạn có chắc muốn mở khóa Pallet ${item.pallet_no}? (Trạng thái sẽ chuyển về Đang scan)`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Đồng ý, Mở khóa!',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/api/unlock_pallet', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ job_type: jobType, pallet_no: item.pallet_no })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire('Thành công', data.message, 'success');
+                            loadData(); 
+                        } else {
+                            Swal.fire('Lỗi', data.message, 'error');
+                        }
+                    })
+                    .catch(err => Swal.fire('Lỗi', 'Lỗi kết nối: ' + err, 'error'));
+                }
+            });
         }
 
         function printLabel(index) {

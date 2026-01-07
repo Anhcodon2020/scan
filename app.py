@@ -504,8 +504,7 @@ def print_label():
     try:
         job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).filter(
             Scanfile.pallet != '',
-            Scanfile.pallet != None,
-            Scanfile.finish == 'COMPLETED'
+            Scanfile.pallet != None
         ).distinct().all() if r[0]]
     except Exception:
         pass
@@ -561,12 +560,12 @@ def get_print_data():
             func.max(Scanfile.master_add4).label('master_add4'),
             func.max(Scanfile.master_delivery).label('master_delivery'),
             func.max(Scanfile.master_ctl).label('master_ctl'),
-            func.max(Scanfile.st_zip).label('st_zip')
+            func.max(Scanfile.st_zip).label('st_zip'),
+            func.max(Scanfile.finish).label('finish')
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
-            Scanfile.pallet != None,
-            Scanfile.finish == 'COMPLETED'
+            Scanfile.pallet != None
         ).group_by(
             Scanfile.pallet,
             Scanfile.sku
@@ -594,7 +593,8 @@ def get_print_data():
                     'st_zip': row.st_zip,
                     'skus': [],
                     'qty': 0, # Tổng số thùng của nhóm này
-                    'has_small_label': is_small
+                    'has_small_label': is_small,
+                    'is_completed': (row.finish == 'COMPLETED')
                 }
             
             master_item = MasterData.query.filter_by(sku=row.sku).first()
@@ -834,7 +834,8 @@ def delete_scan():
     # Kiểm tra xem pallet có bị khóa không
     is_locked = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet).first()
     if is_locked:
-        return jsonify({'success': False, 'message': 'Pallet đã bị khóa, không thể xóa hàng.'}), 400
+        if session.get('role') != 'admin':
+            return jsonify({'success': False, 'message': 'Pallet đã bị khóa, không thể xóa hàng.'}), 400
 
     try:
         # Query tìm các item đã scan vào pallet này
@@ -860,8 +861,9 @@ def delete_scan():
             Scanfile.query.filter(Scanfile.id.in_(ids)).update({
                 'pallet': '',
                 'pallet_type': '',
-                'userscan': ''
-               
+                'userscan': '',
+                'time_scan': None,
+                'finish': None
             }, synchronize_session=False)
             count = len(ids)
         else:
@@ -869,11 +871,27 @@ def delete_scan():
             count = query.update({
                 'pallet': '',
                 'pallet_type': '',
-                'userscan': ''
-                
+                'userscan': '',
+                'time_scan': None,
+                'finish': None
             }, synchronize_session=False)
         
         db.session.commit()
+
+        # Nếu Admin xóa hàng trong Pallet đã khóa -> Cập nhật lại số lượng trong bảng Load
+        if is_locked and session.get('role') == 'admin':
+            new_qty = Scanfile.query.filter(
+                Scanfile.jobno_type == job_type,
+                Scanfile.pallet == pallet
+            ).count()
+            
+            if new_qty == 0:
+                db.session.delete(is_locked) # Nếu xóa hết thì mở khóa luôn
+            else:
+                is_locked.quantity = new_qty # Cập nhật số lượng mới
+            
+            db.session.commit()
+
         return jsonify({'success': True, 'message': f'Đã xóa {count} thùng SKU {sku} khỏi Pallet {pallet}.'})
         
     except Exception as e:
