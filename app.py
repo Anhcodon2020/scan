@@ -373,7 +373,7 @@ def finish_pallet():
         new_log = Log(
             username=session.get('user'),
             action='FINISH_PALLET',
-            message=f"Đã báo xong Pallet {pallet_no} ({count} thùng)",
+            message=f"Job: {job_type} - Pallet {pallet_no} ({count} thùng)",
             is_read=False
         )
         db.session.add(new_log)
@@ -414,7 +414,7 @@ def unlock_pallet():
         db.session.add(Log(
             username=session.get('user'),
             action='UNLOCK_PALLET',
-            message=f"Đã mở khóa Pallet {pallet_no}",
+            message=f"Job: {job_type} - Đã mở khóa Pallet {pallet_no}",
             is_read=False
         ))
 
