@@ -841,22 +841,21 @@ def delete_scan():
             
             # Reset trạng thái về NULL (trở thành hàng chờ scan)
             Scanfile.query.filter(Scanfile.id.in_(ids)).update({
-                'pallet': None,
-                'pallet_type': None,
-                'userscan': None,
-                'time_scan': None
+                'pallet': '',
+                'pallet_type': '',
+                'userscan': ''
+               
             }, synchronize_session=False)
-            
             count = len(ids)
         else:
             # Nếu không nhập số lượng -> Xóa HẾT SKU đó trong Pallet
             count = query.update({
-                'pallet': None,
-                'pallet_type': None,
-                'userscan': None,
-                'time_scan': None
+                'pallet': '',
+                'pallet_type': '',
+                'userscan': ''
+                
             }, synchronize_session=False)
-            
+        
         db.session.commit()
         return jsonify({'success': True, 'message': f'Đã xóa {count} thùng SKU {sku} khỏi Pallet {pallet}.'})
         
@@ -890,6 +889,89 @@ def delete_sku():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Lỗi: {str(e)}'}), 500
+
+@app.route('/api/check_barcode', methods=['POST'])
+def check_barcode():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    data = request.json
+    barcode = data.get('barcode', '').strip()
+    job_type = data.get('job_type')
+    
+    if not barcode or not job_type:
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    # 1. Xác định SKU từ Barcode (Logic giống api_scan)
+    refix_val = barcode[-6:-1]
+    sku = _refix_cache.get(refix_val)
+    if not sku:
+        master_item = MasterData.query.filter_by(refix=refix_val).first()
+        if not master_item:
+            return jsonify({'success': False, 'message': f'Refix {refix_val} không tồn tại'}), 404
+        sku = master_item.sku
+        _refix_cache[refix_val] = sku
+
+    # 2. Đếm số lượng item của SKU này đang chờ (chưa có pallet) trong Job Type này
+    count = Scanfile.query.filter(
+        Scanfile.sku == sku,
+        Scanfile.jobno_type == job_type,
+        (Scanfile.pallet == '') | (Scanfile.pallet == None)
+    ).count()
+
+    # Lấy thông tin trọng lượng
+    # Nếu master_item chưa có (do lấy SKU từ cache), cần query lại
+    master_item = MasterData.query.filter_by(sku=sku).first()
+    weight = master_item.weight if master_item and master_item.weight else 0
+
+    return jsonify({'success': True, 'sku': sku, 'count': count, 'weight': weight})
+
+@app.route('/api/bulk_update', methods=['POST'])
+def bulk_update():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    data = request.json
+    sku = data.get('sku')
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    pallet_type = data.get('pallet_type')
+    quantity = data.get('quantity')
+
+    if not all([sku, job_type, pallet_no, quantity]):
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+
+    # Kiểm tra khóa Pallet
+    is_locked = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).first()
+    if is_locked:
+        return jsonify({'success': False, 'message': f'Pallet {pallet_no} đã bị khóa. Không thể thêm hàng.'}), 400
+
+    try:
+        qty = int(quantity)
+        if qty <= 0: return jsonify({'success': False, 'message': 'Số lượng phải lớn hơn 0'}), 400
+
+        # Lấy danh sách ID cần update (Lấy những dòng chưa có pallet)
+        items_to_update = db.session.query(Scanfile.id).filter(
+            Scanfile.sku == sku,
+            Scanfile.jobno_type == job_type,
+            (Scanfile.pallet == '') | (Scanfile.pallet == None)
+        ).limit(qty).all()
+
+        ids = [item.id for item in items_to_update]
+        
+        if not ids:
+            return jsonify({'success': False, 'message': 'Không còn hàng chờ cho SKU này'}), 400
+
+        Scanfile.query.filter(Scanfile.id.in_(ids)).update({
+            'pallet': pallet_no,
+            'pallet_type': pallet_type,
+            'userscan': session.get('user'),
+            'time_scan': datetime.now()
+        }, synchronize_session=False)
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã cập nhật {len(ids)} thùng vào Pallet {pallet_no}', 'sku': sku})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---

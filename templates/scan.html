@@ -146,7 +146,9 @@
                             <th style="padding: 10px; text-align: center; color: #555;">Pallet</th>
                             <th style="padding: 10px; text-align: left; color: #555;">SKU</th>
                             <th style="padding: 10px; text-align: center; color: #555;">Số lượng (SSCC)</th>
+                            {% if session.get('role') == 'admin' %}
                             <th style="padding: 10px; text-align: center; color: #555;">Xóa</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -442,12 +444,13 @@
                             job_type: type, 
                             pallet: pallet, 
                             sku: sku,
-                            quantity: quantity // Gửi số lượng (có thể rỗng)
+                            quantity: quantity ? parseInt(quantity) : null // Gửi số lượng (có thể rỗng)
                         })
                     })
-                    .then(response => {
-                        if (!response.ok) throw new Error(response.statusText);
-                        return response.json();
+                    .then(async response => {
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.message || response.statusText);
+                        return data;
                     })
                     .catch(error => {
                         Swal.showValidationMessage(`Request failed: ${error}`);
@@ -486,13 +489,18 @@
                     const tbody = document.querySelector('#historyTable tbody');
                     tbody.innerHTML = '';
                     data.history.forEach(item => {
+                        let deleteCell = '';
+                        if (userRole === 'admin') {
+                            deleteCell = `<td style="padding: 8px; text-align: center;"><button onclick="deleteScan('${item.pallet}', '${item.sku}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Xóa</button></td>`;
+                        }
+
                         const tr = document.createElement('tr');
                         tr.style.borderBottom = '1px solid #eee';
                         tr.innerHTML = `
                             <td style="padding: 8px; text-align: center; font-weight: bold;">${item.pallet}</td>
                             <td style="padding: 8px;"><a href="javascript:void(0)" onclick="showSkuDetails('${item.sku}')" style="color: #007bff; text-decoration: underline;">${item.sku}</a></td>
                             <td style="padding: 8px; text-align: center; font-weight: bold;">${item.qty}</td>
-                            <td style="padding: 8px; text-align: center;"><button onclick="deleteScan('${item.pallet}', '${item.sku}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Xóa</button></td>
+                            ${deleteCell}
                         `;
                         tbody.appendChild(tr);
                     });
@@ -849,7 +857,12 @@
                             // Hiển thị xác nhận
                             return Swal.fire({
                                 title: 'Scan Hàng Loạt',
-                                html: `Tìm thấy SKU: <b>${data.sku}</b><br>Số lượng còn lại: <b>${data.count}</b><br>Nhập số lượng muốn scan vào Pallet <b>${palletNo}</b>:`,
+                                html: `Tìm thấy SKU: <b>${data.sku}</b><br>Số lượng còn lại: <b>${data.count}</b><br>
+                                       Trọng lượng: <b>${data.weight || 0} kg/thùng</b><br>
+                                       <div style="margin: 10px 0; font-size: 1.1em; color: #007bff;">
+                                           Tổng trọng lượng dự kiến: <span id="calcWeight">0</span> kg
+                                       </div>
+                                       Nhập số lượng muốn scan vào Pallet <b>${palletNo}</b>:`,
                                 input: 'number',
                                 inputValue: data.count,
                                 inputAttributes: {
@@ -864,7 +877,19 @@
                                 cancelButtonText: 'Hủy',
                                 didOpen: () => {
                                     const input = Swal.getInput();
-                                    if (input) input.select(); // Tự động bôi đen số lượng để nhập nhanh
+                                    const weightSpan = document.getElementById('calcWeight');
+                                    const unitWeight = parseFloat(data.weight) || 0;
+                                    
+                                    const updateCalc = () => {
+                                        const val = parseInt(input.value) || 0;
+                                        weightSpan.innerText = (val * unitWeight).toFixed(2);
+                                    };
+
+                                    if (input) {
+                                        input.select(); // Tự động bôi đen số lượng để nhập nhanh
+                                        input.addEventListener('input', updateCalc);
+                                        updateCalc(); // Tính ngay giá trị ban đầu
+                                    }
                                 },
                                 preConfirm: (qty) => {
                                     if (!qty || qty < 1 || qty > data.count) {
