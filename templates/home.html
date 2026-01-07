@@ -219,18 +219,30 @@
             </a>
             {% endif %}
 
-            <!-- Chức năng Thống kê & In ấn: Dành cho admin và printer -->
-            {% if session.get('role') in ['admin', 'printer'] %}
+            <!-- Chức năng Thống kê: Dành cho admin, printer và Docs -->
+            {% if session.get('role') in ['admin', 'printer', 'Docs'] %}
             <a href="/stats" class="card card-stats">
                 <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
                 <h3>Thống Kê</h3>
                 <p>Xem báo cáo tiến độ và hàng tồn</p>
             </a>
+            {% endif %}
 
+            <!-- Chức năng In ấn: Dành cho admin và printer -->
+            {% if session.get('role') in ['admin', 'printer'] %}
             <a href="/print-label" class="card card-print">
                 <div class="card-icon"><i class="fas fa-print"></i></div>
                 <h3>In Tem Pallet</h3>
                 <p>In tem lớn cho Pallet hoàn chỉnh</p>
+            </a>
+            {% endif %}
+
+            <!-- Chức năng Dashboard: Dành cho admin, printer và Docs -->
+            {% if session.get('role') in ['admin', 'printer', 'Docs'] %}
+            <a href="/dashboard" class="card" style="border-color: #17a2b8;">
+                <div class="card-icon" style="color: #17a2b8; background-color: rgba(23, 162, 184, 0.1);"><i class="fas fa-tachometer-alt"></i></div>
+                <h3>Dashboard</h3>
+                <p>Biểu đồ tiến độ thời gian thực</p>
             </a>
             {% endif %}
 

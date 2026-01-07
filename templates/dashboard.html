@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Hệ Thống Quét Hàng</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; margin-bottom: 20px; }
+        .card-header { background-color: white; border-bottom: 1px solid #eee; font-weight: bold; color: #007bff; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/"><i class="bi bi-speedometer2"></i> DASHBOARD</a>
+            <div class="d-flex">
+                <span class="navbar-text text-white me-3">
+                    <i class="bi bi-clock"></i> Cập nhật: <span id="lastUpdate">--:--:--</span>
+                </span>
+                <a href="/" class="btn btn-outline-light btn-sm">Quay lại Menu</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <div class="row">
+            <!-- Biểu đồ Tiến độ các Job -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header"><i class="bi bi-bar-chart-fill"></i> Tiến Độ Theo Job Type</div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="jobProgressChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Biểu đồ Năng suất theo giờ -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header"><i class="bi bi-graph-up"></i> Năng Suất Scan Hôm Nay (Thùng/Giờ)</div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="hourlyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng chi tiết -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-table"></i> Chi Tiết Tiến Độ</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover text-center align-middle" id="statsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Job Type</th>
+                                <th>Tổng Số Lượng</th>
+                                <th>Đã Scan</th>
+                                <th>Còn Lại</th>
+                                <th>Tiến Độ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="5">Đang tải dữ liệu...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let jobChartInstance = null;
+        let hourlyChartInstance = null;
+
+        function updateDashboard() {
+            fetch('/api/dashboard_stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderJobChart(data.job_stats);
+                        renderHourlyChart(data.hourly_stats);
+                        renderTable(data.job_stats);
+                        
+                        const now = new Date();
+                        document.getElementById('lastUpdate').innerText = now.toLocaleTimeString();
+                    }
+                })
+                .catch(err => console.error('Lỗi cập nhật dashboard:', err));
+        }
+
+        function renderJobChart(stats) {
+            const labels = stats.map(s => s.job_type);
+            const scannedData = stats.map(s => s.scanned);
+            const remainData = stats.map(s => s.total - s.scanned);
+
+            const ctx = document.getElementById('jobProgressChart').getContext('2d');
+            
+            if (jobChartInstance) jobChartInstance.destroy();
+
+            jobChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Đã Scan', data: scannedData, backgroundColor: '#28a745' },
+                        { label: 'Còn Lại', data: remainData, backgroundColor: '#dc3545' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+                }
+            });
+        }
+
+        function renderHourlyChart(hourlyData) {
+            const labels = Array.from({length: 24}, (_, i) => `${i}h`);
+            const ctx = document.getElementById('hourlyChart').getContext('2d');
+
+            if (hourlyChartInstance) hourlyChartInstance.destroy();
+
+            hourlyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Số lượng thùng',
+                        data: hourlyData,
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        function renderTable(stats) {
+            const tbody = document.querySelector('#statsTable tbody');
+            let html = '';
+            stats.forEach(s => {
+                const percent = s.total > 0 ? Math.round((s.scanned / s.total) * 100) : 0;
+                html += `<tr><td>${s.job_type}</td><td>${s.total}</td><td class="text-success fw-bold">${s.scanned}</td><td class="text-danger fw-bold">${s.total - s.scanned}</td>
+                <td><div class="progress" style="height: 20px;"><div class="progress-bar bg-success" role="progressbar" style="width: ${percent}%">${percent}%</div></div></td></tr>`;
+            });
+            tbody.innerHTML = html || '<tr><td colspan="5">Không có dữ liệu</td></tr>';
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 30000); // Cập nhật mỗi 30 giây
+    </script>
+</body>
+</html>

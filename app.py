@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, render_template, request, redirect, url_for, session, Response
-from sqlalchemy import text, func
+from sqlalchemy import text, func, case
 import os
 import csv
 import io
@@ -373,7 +373,7 @@ def finish_pallet():
         new_log = Log(
             username=session.get('user'),
             action='FINISH_PALLET',
-            message=f"Job: {job_type} - Pallet {pallet_no} ({count} thùng)",
+            message=f"Đã báo xong Pallet {pallet_no} ({count} thùng)",
             is_read=False
         )
         db.session.add(new_log)
@@ -414,7 +414,7 @@ def unlock_pallet():
         db.session.add(Log(
             username=session.get('user'),
             action='UNLOCK_PALLET',
-            message=f"Job: {job_type} - Đã mở khóa Pallet {pallet_no}",
+            message=f"Đã mở khóa Pallet {pallet_no}",
             is_read=False
         ))
 
@@ -504,7 +504,8 @@ def print_label():
     try:
         job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).filter(
             Scanfile.pallet != '',
-            Scanfile.pallet != None
+            Scanfile.pallet != None,
+            Scanfile.finish == 'COMPLETED'
         ).distinct().all() if r[0]]
     except Exception:
         pass
@@ -560,12 +561,12 @@ def get_print_data():
             func.max(Scanfile.master_add4).label('master_add4'),
             func.max(Scanfile.master_delivery).label('master_delivery'),
             func.max(Scanfile.master_ctl).label('master_ctl'),
-            func.max(Scanfile.st_zip).label('st_zip'),
-            func.max(Scanfile.finish).label('finish')
+            func.max(Scanfile.st_zip).label('st_zip')
         ).filter(
             Scanfile.jobno_type == job_type,
             Scanfile.pallet != '',
-            Scanfile.pallet != None
+            Scanfile.pallet != None,
+            Scanfile.finish == 'COMPLETED'
         ).group_by(
             Scanfile.pallet,
             Scanfile.sku
@@ -593,8 +594,7 @@ def get_print_data():
                     'st_zip': row.st_zip,
                     'skus': [],
                     'qty': 0, # Tổng số thùng của nhóm này
-                    'has_small_label': is_small,
-                    'is_completed': (row.finish == 'COMPLETED')
+                    'has_small_label': is_small
                 }
             
             master_item = MasterData.query.filter_by(sku=row.sku).first()
@@ -1022,45 +1022,56 @@ def get_pending_pallets():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-@app.route('/api/request_reprint', methods=['POST'])
-def request_reprint():
-    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+@app.route('/dashboard')
+def dashboard():
+    if 'user' not in session: return redirect(url_for('login'))
+    # Cho phép Admin, Printer, Docs xem dashboard
+    if session.get('role') not in ['admin', 'printer', 'Docs']:
+         return redirect(url_for('index'))
+    return render_template('dashboard.html')
 
-    data = request.json
-    job_type = data.get('job_type')
-    pallet_no = data.get('pallet_no')
-
-    if not job_type or not pallet_no:
-        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
-
+@app.route('/api/dashboard_stats')
+def dashboard_stats():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    
     try:
-        # Kiểm tra Pallet đã hoàn thành chưa
-        scan_check = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no, finish='COMPLETED').first()
-        if not scan_check:
-             return jsonify({'success': False, 'message': 'Pallet chưa hoàn thành hoặc không tồn tại.'}), 400
-
-        # Cập nhật hoặc tạo mới trong bảng Load (để hiện lại bên Printer)
-        load_entry = Load.query.filter_by(jobno_type=job_type, pallet_no=pallet_no).first()
+        # 1. Thống kê tiến độ theo Job Type
+        # Tính tổng số lượng và số lượng đã scan (pallet khác rỗng và khác Null)
+        stats_query = db.session.query(
+            Scanfile.jobno_type,
+            func.count(Scanfile.id).label('total'),
+            func.sum(case(( (Scanfile.pallet != '') & (Scanfile.pallet != None), 1), else_=0)).label('scanned')
+        ).group_by(Scanfile.jobno_type).all()
         
-        if load_entry:
-            load_entry.status = 'PENDING'
-        else:
-            count = Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).count()
-            new_load = Load(
-                jobno_type=job_type,
-                pallet_no=pallet_no,
-                pallet_type=scan_check.pallet_type,
-                quantity=count,
-                created_by=session.get('user'),
-                status='PENDING'
-            )
-            db.session.add(new_load)
+        job_stats = []
+        for row in stats_query:
+            job_stats.append({
+                'job_type': row.jobno_type,
+                'total': row.total,
+                'scanned': int(row.scanned) if row.scanned else 0
+            })
 
-        db.session.commit()
-        return jsonify({'success': True, 'message': f'Đã gửi yêu cầu in lại cho Pallet {pallet_no}.'})
+        # 2. Biểu đồ năng suất theo giờ (trong ngày hôm nay)
+        today = datetime.now().date()
+        hourly_query = db.session.query(
+            func.hour(Scanfile.time_scan).label('hour'),
+            func.count(Scanfile.id).label('count')
+        ).filter(
+            func.date(Scanfile.time_scan) == today,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(func.hour(Scanfile.time_scan)).all()
+        
+        hourly_data = {h: 0 for h in range(24)}
+        for r in hourly_query:
+            hourly_data[r.hour] = r.count
+            
+        return jsonify({
+            'success': True, 
+            'job_stats': job_stats,
+            'hourly_stats': list(hourly_data.values())
+        })
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
