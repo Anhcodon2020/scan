@@ -162,7 +162,16 @@ def api_scan():
 
         db.session.commit()
 
-        return jsonify({'success': True, 'message': 'Scan thành công', 'sku': sku})
+        # Thống kê tiến độ của SKU này trong Job để hiển thị
+        sku_total = Scanfile.query.filter_by(jobno_type=job_type, sku=sku).count()
+        sku_scanned = Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.sku == sku,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).count()
+
+        return jsonify({'success': True, 'message': 'Scan thành công', 'sku': sku, 'sku_scanned': sku_scanned, 'sku_total': sku_total})
 
     except Exception as e:
         db.session.rollback()

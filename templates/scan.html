@@ -969,7 +969,10 @@
 
                         item.innerHTML = `
                             <div style="display:flex; align-items:center; justify-content:space-between; width:100%">
-                                <span>${data.sku} <span style="color:green; font-weight:bold">OK</span></span>
+                                <div>
+                                    <div style="font-weight:bold; font-size: 1.1em;">${data.sku} <span style="color:green;">OK</span></div>
+                                    <div style="font-size: 0.9em; color: #555;">Job: ${data.sku_scanned}/${data.sku_total}</div>
+                                </div>
                                 <button onclick="deleteScan('${palletNo}', '${data.sku}')" style="background:#dc3545; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px; font-weight:bold;">Xóa</button>
                             </div>`;
                         item.style.backgroundColor = '#d4edda';
