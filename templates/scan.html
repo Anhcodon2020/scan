@@ -392,7 +392,7 @@
                     .then(res => res.json())
                     .then(data => {
                         Swal.fire(data.success ? 'Thành công!' : 'Lỗi!', data.message, data.success ? 'success' : 'error');
-                        if (data.success) fetchPalletDetails(); // Cập nhật lại trạng thái nút
+                        if (data.success) fetchPallets(palletNo); // Reload list và giữ nguyên pallet đang chọn
                     })
                     .catch(err => Swal.fire('Lỗi!', 'Đã xảy ra lỗi kết nối: ' + err, 'error'));
                 }
@@ -535,7 +535,7 @@
         }
 
         // Hàm cập nhật danh sách Pallet khả dụng (trống)
-        function fetchPallets() {
+        function fetchPallets(targetPallet = null) {
             const type = jobTypeSelect.value;
             fetch(`/api/get_pallets?job_type=${encodeURIComponent(type)}`)
             .then(r => r.json())
@@ -546,6 +546,9 @@
                         const opt = document.createElement('option');
                         opt.value = p.no;
                         opt.innerText = p.label;
+                        if (targetPallet && String(p.no) === String(targetPallet)) {
+                            opt.selected = true;
+                        }
                         palletSelect.appendChild(opt);
                     });
                     // Cập nhật chi tiết cho pallet đầu tiên (mặc định)
