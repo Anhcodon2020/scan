@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Nhân Viên</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
+        .btn-back { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #666; font-size: 16px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
+        .btn-add { background-color: #28a745; margin-bottom: 15px; font-size: 16px; padding: 10px 20px; }
+        .btn-edit { background-color: #ffc107; color: #333; margin-right: 5px; }
+        .btn-delete { background-color: #dc3545; }
+        .btn:hover { opacity: 0.9; }
+
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 450px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
+        .close:hover { color: #000; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        
+        .badge-active { background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .badge-inactive { background-color: #6c757d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <a href="/" class="btn-back" style="margin-bottom: 0;">← Quay lại Menu</a>
+            <div style="display: flex; align-items: center;">
+                <span style="margin-right: 15px; font-weight: 600; color: #333;">Xin chào, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="margin-bottom: 0; color: #dc3545; font-weight: bold;">Đăng xuất</a>
+            </div>
+        </div>
+        
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Quản Lý Nhân Viên</h2>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+            <div style="background: #007bff; color: white; padding: 10px 15px; border-radius: 5px; font-weight: bold; flex: 1; text-align: center; min-width: 120px;">
+                Tổng Active: <span id="statTotal" style="font-size: 1.2em;">0</span>
+            </div>
+            <div style="background: #17a2b8; color: white; padding: 10px 15px; border-radius: 5px; font-weight: bold; flex: 1; text-align: center; min-width: 120px;">
+                KLN: <span id="statKLN" style="font-size: 1.2em;">0</span>
+            </div>
+            <div style="background: #28a745; color: white; padding: 10px 15px; border-radius: 5px; font-weight: bold; flex: 1; text-align: center; min-width: 120px;">
+                PST: <span id="statPST" style="font-size: 1.2em;">0</span>
+            </div>
+            <div style="background: #ffc107; color: #333; padding: 10px 15px; border-radius: 5px; font-weight: bold; flex: 1; text-align: center; min-width: 120px;">
+                PNT: <span id="statPNT" style="font-size: 1.2em;">0</span>
+            </div>
+        </div>
+
+        <button class="btn btn-add" onclick="openModal()">+ Thêm Nhân Viên</button>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50px;">ID</th>
+                    <th>Họ và Tên</th>
+                    <th>Nguồn (Source)</th>
+                    <th style="text-align: center;">Trạng thái</th>
+                    <th>Ngày tạo</th>
+                    <th style="width: 150px; text-align: center;">Hành động</th>
+                </tr>
+            </thead>
+            <tbody id="empTableBody">
+                <tr><td colspan="6" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal Thêm/Sửa -->
+    <div id="empModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin-top: 0;">Thêm Nhân Viên</h3>
+            <input type="hidden" id="empId">
+            
+            <div class="form-group">
+                <label>Họ và Tên <span style="color:red">*</span></label>
+                <input type="text" id="hovaten" placeholder="Nhập họ tên nhân viên">
+            </div>
+            
+            <div class="form-group">
+                <label>Nguồn (Source)</label>
+                <input type="text" id="source" placeholder="Ví dụ: Nội bộ, Thời vụ...">
+            </div>
+            
+            <div class="form-group">
+                <label>Trạng thái (Active)</label>
+                <select id="active">
+                    <option value="1">Hoạt động (1)</option>
+                    <option value="0">Ngưng hoạt động (0)</option>
+                </select>
+            </div>
+            
+            <button class="btn btn-add" style="width: 100%; margin-bottom: 0;" onclick="saveEmployee()">Lưu Thông Tin</button>
+        </div>
+    </div>
+
+    <script>
+        const modal = document.getElementById('empModal');
+        
+        function loadEmployees() {
+            fetch('/api/employees/list')
+            .then(r => r.json())
+            .then(data => {
+                // Cập nhật thống kê
+                if (data.stats) {
+                    document.getElementById('statTotal').innerText = data.stats.TOTAL;
+                    document.getElementById('statKLN').innerText = data.stats.KLN;
+                    document.getElementById('statPST').innerText = data.stats.PST;
+                    document.getElementById('statPNT').innerText = data.stats.PNT;
+                }
+
+                const tbody = document.getElementById('empTableBody');
+                tbody.innerHTML = '';
+                if(data.success && data.employees.length > 0) {
+                    data.employees.forEach(e => {
+                        const statusBadge = e.active == 1 
+                            ? '<span class="badge-active">Hoạt động</span>' 
+                            : '<span class="badge-inactive">Ngưng</span>';
+                        
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>${e.id}</td>
+                                <td><strong>${e.hovaten}</strong></td>
+                                <td>${e.source || '-'}</td>
+                                <td style="text-align: center;">${statusBadge}</td>
+                                <td>${e.created_at}</td>
+                                <td style="text-align: center;">
+                                    <button class="btn btn-edit" onclick="editEmployee(${e.id}, '${e.hovaten}', '${e.source || ''}', ${e.active})">Sửa</button>
+                                    <button class="btn btn-delete" onclick="deleteEmployee(${e.id}, '${e.hovaten}')">Xóa</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Chưa có dữ liệu</td></tr>';
+                }
+            });
+        }
+
+        function openModal() {
+            document.getElementById('empId').value = '';
+            document.getElementById('hovaten').value = '';
+            document.getElementById('source').value = '';
+            document.getElementById('active').value = '1';
+            document.getElementById('modalTitle').innerText = 'Thêm Nhân Viên';
+            modal.style.display = "block";
+        }
+
+        function editEmployee(id, hovaten, source, active) {
+            document.getElementById('empId').value = id;
+            document.getElementById('hovaten').value = hovaten;
+            document.getElementById('source').value = source;
+            document.getElementById('active').value = active;
+            document.getElementById('modalTitle').innerText = 'Sửa Nhân Viên';
+            modal.style.display = "block";
+        }
+
+        function closeModal() { modal.style.display = "none"; }
+        window.onclick = function(e) { if (e.target == modal) closeModal(); }
+
+        function saveEmployee() {
+            const id = document.getElementById('empId').value;
+            const hovaten = document.getElementById('hovaten').value;
+            const source = document.getElementById('source').value;
+            const active = document.getElementById('active').value;
+
+            if(!hovaten) { alert('Vui lòng nhập Họ tên'); return; }
+
+            fetch('/api/employees/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, hovaten, source, active})
+            }).then(r => r.json()).then(data => {
+                if(data.success) { closeModal(); loadEmployees(); }
+                else { alert(data.message); }
+            });
+        }
+
+        function deleteEmployee(id, name) {
+            if(confirm('Bạn có chắc muốn xóa nhân viên: ' + name + '?')) {
+                fetch('/api/employees/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id})
+                }).then(r => r.json()).then(data => {
+                    if(data.success) loadEmployees();
+                    else alert(data.message);
+                });
+            }
+        }
+
+        loadEmployees();
+    </script>
+</body>
+</html>

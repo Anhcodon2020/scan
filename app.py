@@ -1,11 +1,11 @@
 from flask import Flask, jsonify, render_template, request, redirect, url_for, session, Response
-from sqlalchemy import text, func, case
+from sqlalchemy import text, func, case, extract
 import os
 import csv
 import io
-from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
+from dotenv import load_dotenv
 
 # Nạp biến môi trường từ file .env
 load_dotenv()
@@ -17,6 +17,7 @@ from models.scanfile import Scanfile
 from models.masterdata import MasterData
 from models.load import Load
 from models.log import Log
+from models.employees import Employee
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -63,7 +64,9 @@ def scan():
     # Lấy danh sách Job Type từ Database (để dropdown không bị trống)
     job_types = []
     try:
-        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).distinct().all() if r[0]]
+        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).filter(
+            (Scanfile.pallet == '') | (Scanfile.pallet == None)
+        ).distinct().all() if r[0]]
     except Exception:
         pass # Bỏ qua lỗi nếu bảng chưa có dữ liệu
 
@@ -170,8 +173,22 @@ def api_scan():
             Scanfile.pallet != '',
             Scanfile.pallet != None
         ).count()
+        
+        # Thống kê số lượng SKU này trong pallet hiện tại
+        sku_in_pallet = Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.sku == sku,
+            Scanfile.pallet == pallet_no
+        ).count()
 
-        return jsonify({'success': True, 'message': 'Scan thành công', 'sku': sku, 'sku_scanned': sku_scanned, 'sku_total': sku_total})
+        return jsonify({
+            'success': True, 
+            'message': 'Scan thành công', 
+            'sku': sku, 
+            'sku_scanned': sku_scanned, 
+            'sku_total': sku_total,
+            'sku_in_pallet': sku_in_pallet
+        })
 
     except Exception as e:
         db.session.rollback()
@@ -294,9 +311,19 @@ def pallet_details():
         ).group_by(Scanfile.sku).all()
 
         skus = [{'sku': r[0], 'qty': r[1]} for r in results]
-        pallet_count = sum(item['qty'] for item in skus)
         
-        return jsonify({'success': True, 'pallet_count': pallet_count, 'skus': skus, 'is_locked': is_locked})
+        # Tính thêm tổng số lượng của từng SKU trong toàn bộ Job
+        final_skus = []
+        for item in skus:
+            total_job = db.session.query(func.count(Scanfile.id)).filter(
+                Scanfile.jobno_type == job_type,
+                Scanfile.sku == item['sku']
+            ).scalar() or 0
+            final_skus.append({'sku': item['sku'], 'qty': item['qty'], 'total_job': total_job})
+
+        pallet_count = sum(item['qty'] for item in final_skus)
+        
+        return jsonify({'success': True, 'pallet_count': pallet_count, 'skus': final_skus, 'is_locked': is_locked})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -862,7 +889,6 @@ def delete_scan():
                 'pallet': '',
                 'pallet_type': '',
                 'userscan': '',
-                'time_scan': None,
                 'finish': None
             }, synchronize_session=False)
             count = len(ids)
@@ -872,7 +898,6 @@ def delete_scan():
                 'pallet': '',
                 'pallet_type': '',
                 'userscan': '',
-                'time_scan': None,
                 'finish': None
             }, synchronize_session=False)
         
@@ -1040,6 +1065,96 @@ def get_pending_pallets():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/scan_dashboard_data')
+def get_scan_dashboard_data():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        # Query này nhóm theo jobno_type và tính toán tổng số, số lượng đã quét, và thời gian quét cuối cùng trong một lần.
+        results = db.session.query(
+            Scanfile.jobno_type,
+            func.count(Scanfile.id).label('total'),
+            func.sum(case(
+                ((Scanfile.pallet != '') & (Scanfile.pallet.isnot(None)), 1),
+                else_=0
+            )).label('scanned'),
+            func.max(case(
+                ((Scanfile.pallet != '') & (Scanfile.pallet.isnot(None)), Scanfile.time_scan)
+            )).label('last_scan')
+        ).filter(
+            Scanfile.jobno_type.isnot(None),
+            Scanfile.jobno_type != ''
+        ).group_by(Scanfile.jobno_type).order_by(Scanfile.jobno_type).all()
+        
+        # Lấy danh sách user đã scan cho từng Job Type
+        active_users = db.session.query(
+            Scanfile.jobno_type,
+            Scanfile.userscan
+        ).filter(
+            Scanfile.jobno_type.isnot(None),
+            Scanfile.jobno_type != '',
+            Scanfile.pallet != '',
+            Scanfile.pallet.isnot(None),
+            Scanfile.userscan != '',
+            Scanfile.userscan.isnot(None)
+        ).distinct().all()
+
+        users_map = {}
+        for j_type, u_name in active_users:
+            if j_type not in users_map:
+                users_map[j_type] = []
+            users_map[j_type].append(u_name)
+        
+        # Thống kê số lượng Pallet đã hoàn thành (COMPLETED)
+        completed_pallets_query = db.session.query(
+            Scanfile.jobno_type,
+            func.count(func.distinct(Scanfile.pallet))
+        ).filter(
+            Scanfile.finish == 'COMPLETED',
+            Scanfile.jobno_type.isnot(None),
+            Scanfile.jobno_type != ''
+        ).group_by(Scanfile.jobno_type).all()
+        
+        completed_map = {r[0]: r[1] for r in completed_pallets_query}
+        
+        # Tính tổng số lượng scan trong ngày hôm nay
+        today = datetime.now().date()
+        total_today = db.session.query(func.count(Scanfile.id)).filter(
+            Scanfile.pallet != '',
+            Scanfile.pallet != None,
+            Scanfile.time_scan >= today
+        ).scalar() or 0
+
+        stats = []
+        for job_type, total, scanned, last_scan in results:
+            # Chuyển đổi scanned về int (vì sum có thể trả về Decimal)
+            scanned_count = int(scanned) if scanned is not None else 0
+            
+            # Xử lý last_scan an toàn (tránh lỗi nếu là string hoặc None)
+            last_scan_str = 'N/A'
+            if last_scan:
+                if hasattr(last_scan, 'strftime'):
+                    last_scan_str = last_scan.strftime('%H:%M:%S %d/%m/%Y')
+                else:
+                    last_scan_str = str(last_scan)
+
+            stats.append({
+                'jobno_type': job_type,
+                'total': total,
+                'scanned': scanned_count,
+                'remaining': total - scanned_count,
+                'progress': (scanned_count / total * 100) if total > 0 else 0,
+                'last_scan': last_scan_str,
+                'users': users_map.get(job_type, []),
+                'completed_pallets': completed_map.get(job_type, 0)
+            })
+
+        return jsonify({'success': True, 'stats': stats, 'total_today': total_today})
+    except Exception as e:
+        print(f"Error in scan_dashboard_data: {e}") # Log lỗi ra console server để debug
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session: return redirect(url_for('login'))
@@ -1048,48 +1163,100 @@ def dashboard():
          return redirect(url_for('index'))
     return render_template('dashboard.html')
 
-@app.route('/api/dashboard_stats')
-def dashboard_stats():
+@app.route('/scan_dashboard')
+def scan_dashboard():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('scan_dashboard.html')
+
+# --- QUẢN LÝ NHÂN VIÊN (EMPLOYEES) ---
+@app.route('/employees')
+def employees_manage():
+    if 'user' not in session: return redirect(url_for('login'))
+    # Chỉ cho phép Admin truy cập (hoặc tùy chỉnh role khác nếu cần)
+    if session.get('role') != 'admin': return redirect(url_for('index'))
+    return render_template('employees.html')
+
+@app.route('/api/employees/list')
+def get_employees_list():
     if 'user' not in session: return jsonify({'success': False}), 401
+    try:
+        employees = Employee.query.order_by(Employee.created_at.desc()).all()
+        
+        stats = {'KLN': 0, 'PST': 0, 'PNT': 0, 'TOTAL': 0}
+        data = []
+        for e in employees:
+            data.append({
+                'id': e.id,
+                'hovaten': e.hovaten,
+                'source': e.source,
+                'active': e.active,
+                'created_at': e.created_at.strftime('%H:%M %d/%m/%Y') if e.created_at else ''
+            })
+            
+            if e.active == 1:
+                stats['TOTAL'] += 1
+                src = (e.source or '').upper()
+                if 'KLN' in src: stats['KLN'] += 1
+                elif 'PST' in src: stats['PST'] += 1
+                elif 'PNT' in src: stats['PNT'] += 1
+
+        return jsonify({'success': True, 'employees': data, 'stats': stats})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/employees/save', methods=['POST'])
+def save_employee():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+    
+    data = request.json
+    emp_id = data.get('id')
+    hovaten = data.get('hovaten')
+    source = data.get('source')
+    active = data.get('active')
+    
+    if not hovaten:
+        return jsonify({'success': False, 'message': 'Họ và tên là bắt buộc'}), 400
+        
+    try:
+        if emp_id: # Edit
+            emp = Employee.query.get(emp_id)
+            if not emp: return jsonify({'success': False, 'message': 'Nhân viên không tồn tại'}), 404
+            
+            emp.hovaten = hovaten
+            emp.source = source
+            emp.active = int(active) if active is not None else 1
+        else: # Add new
+            new_emp = Employee(
+                hovaten=hovaten,
+                source=source,
+                active=int(active) if active is not None else 1
+            )
+            db.session.add(new_emp)
+            
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/employees/delete', methods=['POST'])
+def delete_employee():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+    
+    data = request.json
+    emp_id = data.get('id')
     
     try:
-        # 1. Thống kê tiến độ theo Job Type
-        # Tính tổng số lượng và số lượng đã scan (pallet khác rỗng và khác Null)
-        stats_query = db.session.query(
-            Scanfile.jobno_type,
-            func.count(Scanfile.id).label('total'),
-            func.sum(case(( (Scanfile.pallet != '') & (Scanfile.pallet != None), 1), else_=0)).label('scanned')
-        ).group_by(Scanfile.jobno_type).all()
-        
-        job_stats = []
-        for row in stats_query:
-            job_stats.append({
-                'job_type': row.jobno_type,
-                'total': row.total,
-                'scanned': int(row.scanned) if row.scanned else 0
-            })
-
-        # 2. Biểu đồ năng suất theo giờ (trong ngày hôm nay)
-        today = datetime.now().date()
-        hourly_query = db.session.query(
-            func.hour(Scanfile.time_scan).label('hour'),
-            func.count(Scanfile.id).label('count')
-        ).filter(
-            func.date(Scanfile.time_scan) == today,
-            Scanfile.pallet != '',
-            Scanfile.pallet != None
-        ).group_by(func.hour(Scanfile.time_scan)).all()
-        
-        hourly_data = {h: 0 for h in range(24)}
-        for r in hourly_query:
-            hourly_data[r.hour] = r.count
-            
-        return jsonify({
-            'success': True, 
-            'job_stats': job_stats,
-            'hourly_stats': list(hourly_data.values())
-        })
+        emp = Employee.query.get(emp_id)
+        if emp:
+            db.session.delete(emp)
+            db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':

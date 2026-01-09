@@ -471,12 +471,12 @@
                     // Hiển thị danh sách SKU
                     if (data.skus.length > 0) {
                         let tableHtml = '<table style="width:100%; border-collapse: collapse; margin-top:5px; background:white;">';
-                        tableHtml += '<tr style="background:#eee;"><th style="border:1px solid #ddd; padding:8px; text-align:left;">SKU</th><th style="border:1px solid #ddd; padding:8px; text-align:center;">SL</th></tr>';
+                        tableHtml += '<tr style="background:#eee;"><th style="border:1px solid #ddd; padding:8px; text-align:left;">SKU</th><th style="border:1px solid #ddd; padding:8px; text-align:center;">SL / Tổng Job</th></tr>';
                         data.skus.forEach(s => {
                             const isHighlight = highlightSku && s.sku === highlightSku;
                             const bgStyle = isHighlight ? 'background-color: #d4edda;' : '';
                             const rowId = isHighlight ? 'id="highlightRow"' : '';
-                            tableHtml += `<tr ${rowId} style="${bgStyle}"><td style="border:1px solid #ddd; padding:8px;">${s.sku}</td><td style="border:1px solid #ddd; padding:8px; text-align:center; font-weight:bold;">${s.qty}</td></tr>`;
+                            tableHtml += `<tr ${rowId} style="${bgStyle}"><td style="border:1px solid #ddd; padding:8px;">${s.sku}</td><td style="border:1px solid #ddd; padding:8px; text-align:center; font-weight:bold;">${s.qty} / ${s.total_job}</td></tr>`;
                         });
                         tableHtml += '</table>';
                         palletDetailsDiv.innerHTML = tableHtml;
@@ -1071,7 +1071,7 @@
                             <div style="display:flex; align-items:center; justify-content:space-between; width:100%">
                                 <div>
                                     <div style="font-weight:bold; font-size: 1.1em;">${data.sku} <span style="color:green;">OK</span></div>
-                                    <div style="font-size: 0.9em; color: #555;">Job: ${data.sku_scanned}/${data.sku_total}</div>
+                                    <div style="font-size: 0.9em; color: #555;">Pallet: <b>${data.sku_in_pallet}</b> | Job: ${data.sku_total}</div>
                                 </div>
                                 <button onclick="deleteScan('${palletNo}', '${data.sku}')" style="background:#dc3545; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px; font-weight:bold;">Xóa</button>
                             </div>`;

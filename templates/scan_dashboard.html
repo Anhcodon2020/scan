@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Tiến Độ Scan</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .card-header {
+            font-weight: bold;
+        }
+        .progress {
+            height: 25px;
+            font-size: 0.9rem;
+        }
+        .progress-bar {
+            font-weight: bold;
+        }
+        .job-card {
+            transition: all 0.3s ease-in-out;
+        }
+        .job-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .last-scan-time {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+        #loading-spinner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">KLN SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('scan') }}">Scan</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ url_for('scan_dashboard') }}">Dashboard</a>
+                    </li>
+                     <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('stats') }}">Thống kê</a>
+                    </li>
+                </ul>
+                <span class="navbar-text">
+                    Chào, {{ session.user }} | <a href="{{ url_for('logout') }}">Đăng xuất</a>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3>Dashboard Tiến Độ Scan (Real-time)</h3>
+            <div class="h5 mb-0">
+                Tổng hôm nay: <span id="total-today" class="badge bg-success">0</span>
+            </div>
+            <div>
+                <span class="text-muted">Cập nhật lần cuối: <span id="last-updated">...</span></span>
+            </div>
+        </div>
+
+        <div id="dashboard-container" class="row g-4">
+            <!-- Dữ liệu sẽ được chèn vào đây bởi JavaScript -->
+        </div>
+
+        <div id="loading-spinner" class="spinner-border text-primary" role="status" style="display: none;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div id="error-message" class="alert alert-danger mt-3" style="display: none;"></div>
+    </div>
+
+    <script>
+        const dashboardContainer = document.getElementById('dashboard-container');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const errorMessage = document.getElementById('error-message');
+        const lastUpdatedSpan = document.getElementById('last-updated');
+        const totalTodaySpan = document.getElementById('total-today');
+
+        function createJobCard(job) {
+            const progressPercentage = job.progress.toFixed(1);
+            let progressBarClass = 'bg-info';
+            if (progressPercentage >= 100) {
+                progressBarClass = 'bg-success';
+            } else if (progressPercentage > 75) {
+                progressBarClass = 'bg-primary';
+            } else if (progressPercentage > 40) {
+                progressBarClass = 'bg-warning';
+            }
+            
+            // Tạo chuỗi hiển thị danh sách user
+            const usersHtml = (job.users && job.users.length > 0) ? `<br><strong>User:</strong> <span class="text-primary">${job.users.join(', ')}</span>` : '';
+
+            return `
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="card job-card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>${job.jobno_type}</span>
+                            <span class="badge bg-secondary">${job.scanned} / ${job.total}</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">
+                                <strong>Đã scan:</strong> ${job.scanned} <br>
+                                <strong>Còn lại:</strong> ${job.remaining}
+                                <br><strong>Pallet hoàn thành:</strong> <span class="text-success fw-bold">${job.completed_pallets}</span>
+                                ${usersHtml}
+                            </p>
+                            <div class="progress">
+                                <div class="progress-bar ${progressBarClass} progress-bar-striped progress-bar-animated" role="progressbar" style="width: ${progressPercentage}%" aria-valuenow="${progressPercentage}" aria-valuemin="0" aria-valuemax="100">
+                                    ${progressPercentage}%
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer text-muted">
+                           <span class="last-scan-time">Scan lần cuối: ${job.last_scan}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch('/api/scan_dashboard_data');
+                if (!response.ok) throw new Error(`Lỗi HTTP! status: ${response.status}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    errorMessage.style.display = 'none';
+                    dashboardContainer.innerHTML = ''; // Xóa thẻ cũ
+                    if (data.stats.length > 0) {
+                        data.stats.forEach(job => {
+                            dashboardContainer.innerHTML += createJobCard(job);
+                        });
+                    } else {
+                        dashboardContainer.innerHTML = '<p class="text-center">Không có dữ liệu Job Type để hiển thị.</p>';
+                    }
+                    
+                    // Cập nhật tổng số hôm nay
+                    if (data.total_today !== undefined) {
+                        totalTodaySpan.textContent = data.total_today;
+                    }
+                    lastUpdatedSpan.textContent = new Date().toLocaleTimeString('vi-VN');
+                } else {
+                    throw new Error(data.message || 'Lỗi không xác định từ server.');
+                }
+            } catch (error) {
+                console.error('Lỗi khi tải dữ liệu dashboard:', error);
+                errorMessage.textContent = `Lỗi khi tải dữ liệu: ${error.message}`;
+                errorMessage.style.display = 'block';
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadingSpinner.style.display = 'block';
+            fetchDashboardData(); // Tải lần đầu
+            setInterval(fetchDashboardData, 10000); // Tải lại sau mỗi 10 giây
+        });
+    </script>
+</body>
+</html>
