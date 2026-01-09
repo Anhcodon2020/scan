@@ -221,6 +221,52 @@ def get_remain_skus():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/get_job_details', methods=['POST'])
+def get_job_details():
+    if 'user' not in session: return jsonify({'success': False}), 401
+    data = request.json
+    job_type = data.get('job_type')
+    
+    if not job_type: return jsonify({'success': False, 'message': 'Thiếu Job Type'}), 400
+
+    try:
+        # Lấy tổng số lượng theo SKU
+        total_query = db.session.query(
+            Scanfile.sku,
+            func.count(Scanfile.id)
+        ).filter(
+            Scanfile.jobno_type == job_type
+        ).group_by(Scanfile.sku).all()
+        
+        # Lấy số lượng đã scan (có pallet)
+        scanned_query = db.session.query(
+            Scanfile.sku,
+            func.count(Scanfile.id)
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(Scanfile.sku).all()
+        
+        scanned_map = {r[0]: r[1] for r in scanned_query}
+        
+        details = []
+        for sku, total in total_query:
+            scanned = scanned_map.get(sku, 0)
+            details.append({
+                'sku': sku,
+                'total': total,
+                'scanned': scanned,
+                'remain': total - scanned
+            })
+            
+        # Sắp xếp: Ưu tiên SKU còn hàng (remain > 0) lên đầu
+        details.sort(key=lambda x: x['remain'], reverse=True)
+
+        return jsonify({'success': True, 'details': details})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/job_stats', methods=['POST'])
 def job_stats_api():
     if 'user' not in session: return jsonify({'success': False}), 401
@@ -433,7 +479,7 @@ def unlock_pallet():
 
         # 2. Cập nhật trạng thái finish trong Scanfile về NULL
         Scanfile.query.filter_by(jobno_type=job_type, pallet=pallet_no).update(
-            {'finish': None}, 
+            {'finish': None, 'jobscan': ''}, 
             synchronize_session=False
         )
         

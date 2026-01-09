@@ -123,6 +123,7 @@
                 <div style="width: 100%; background-color: #ccc; border-radius: 4px; margin-top: 5px; height: 15px; overflow: hidden;">
                     <div id="progressBar" style="width: 0%; height: 100%; background-color: #28a745; text-align: center; line-height: 15px; color: white; font-size: 10px; transition: width 0.3s;">0%</div>
                 </div>
+                <button onclick="showJobDetails()" style="margin-top: 8px; width: 100%; padding: 6px; background-color: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">ℹ️ Xem chi tiết Job</button>
             </div>
             Đã scan : <span id="count">0</span> | Chờ xử lý: <span id="queueCount" style="color: orange; font-weight: bold;">0</span><br>
             <strong>Tổng Pallet <span id="lblPallet"></span>: <span id="palletTotal" style="color: #007bff; font-size: 1.2em;">0</span></strong>
@@ -222,6 +223,43 @@
                     
                     // Cập nhật tiêu đề với tổng số lượng
                     document.getElementById('modalTitle').innerText = `Chi tiết SKU: ${sku} (Tổng: ${totalQty})`;
+                    document.getElementById('modalBody').innerHTML = html;
+                } else {
+                    document.getElementById('modalBody').innerText = 'Lỗi: ' + data.message;
+                }
+            })
+            .catch(e => document.getElementById('modalBody').innerText = 'Lỗi: ' + e);
+        }
+
+        function showJobDetails() {
+            const type = jobTypeSelect.value;
+            document.getElementById('modalTitle').innerText = 'Tiến độ chi tiết Job: ' + type;
+            document.getElementById('modalBody').innerHTML = 'Đang tải...';
+            modal.style.display = "block";
+
+            fetch('/api/get_job_details', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_type: type})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    if (data.details.length === 0) {
+                        document.getElementById('modalBody').innerHTML = '<p>Không có dữ liệu.</p>';
+                        return;
+                    }
+                    let html = '<div style="max-height:400px; overflow-y:auto;"><table class="modal-table"><thead><tr><th>SKU</th><th>Tổng</th><th>Đã Scan</th><th>Còn lại</th></tr></thead><tbody>';
+                    data.details.forEach(d => {
+                        const bg = d.remain === 0 ? 'background-color:#d4edda;' : '';
+                        html += `<tr style="${bg}">
+                            <td style="text-align:left;">${d.sku}</td>
+                            <td>${d.total}</td>
+                            <td style="color:green; font-weight:bold;">${d.scanned}</td>
+                            <td style="color:red; font-weight:bold;">${d.remain}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
                     document.getElementById('modalBody').innerHTML = html;
                 } else {
                     document.getElementById('modalBody').innerText = 'Lỗi: ' + data.message;
