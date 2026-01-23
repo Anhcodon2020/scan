@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sửa Loại Pallet - Hệ Thống Quét Hàng</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --danger-color: #dc3545;
+            --dark-text: #343a40;
+            --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #e9ecef; color: var(--dark-text); margin: 0; }
+        .navbar { background: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .brand { font-size: 20px; font-weight: 700; color: var(--primary-color); text-decoration: none; display: flex; align-items: center; gap: 10px; }
+        .container { max-width: 600px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: var(--card-shadow); }
+        h2 { text-align: center; margin-bottom: 30px; color: var(--primary-color); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; }
+        select, input { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        .btn-submit { width: 100%; padding: 12px; background: var(--primary-color); color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        .btn-submit:hover { background: #0056b3; }
+        .btn-submit:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-back { display: inline-block; margin-bottom: 20px; color: var(--secondary-color); text-decoration: none; }
+        .alert { padding: 15px; margin-bottom: 20px; border-radius: 6px; display: none; }
+        .alert-success { background-color: #d4edda; color: #155724; }
+        .alert-danger { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand"><i class="fas fa-barcode"></i> Hệ Thống Quét Hàng</a>
+        <div>
+            <span style="margin-right: 15px;">Xin chào, {{ session.get('user') }}</span>
+            <a href="/logout" style="color: var(--danger-color); text-decoration: none; font-weight: 600;">Đăng xuất</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <a href="/" class="btn-back"><i class="fas fa-arrow-left"></i> Quay lại Dashboard</a>
+        <h2><i class="fas fa-edit"></i> Sửa Loại Pallet</h2>
+        
+        <div id="alertBox" class="alert"></div>
+
+        <div class="form-group">
+            <label>Chọn Job Type:</label>
+            <select id="jobType">
+                <option value="">-- Chọn Job Type --</option>
+                {% for job in job_types %}
+                <option value="{{ job }}">{{ job }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Chọn Pallet:</label>
+            <select id="palletNo" disabled>
+                <option value="">-- Vui lòng chọn Job Type trước --</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Loại Pallet Mới (Pallet Type):</label>
+            <input type="text" id="palletType" placeholder="Ví dụ: 1.2, 1.6, Loose..." disabled>
+        </div>
+
+        <button class="btn-submit" onclick="savePalletType()" id="btnSave" disabled>Lưu Thay Đổi</button>
+    </div>
+
+    <script>
+        const jobSelect = document.getElementById('jobType');
+        const palletSelect = document.getElementById('palletNo');
+        const typeInput = document.getElementById('palletType');
+        const btnSave = document.getElementById('btnSave');
+        const alertBox = document.getElementById('alertBox');
+
+        function showAlert(msg, type) {
+            alertBox.className = 'alert alert-' + type;
+            alertBox.innerText = msg;
+            alertBox.style.display = 'block';
+            setTimeout(() => alertBox.style.display = 'none', 3000);
+        }
+
+        jobSelect.addEventListener('change', async () => {
+            const job = jobSelect.value;
+            palletSelect.innerHTML = '<option value="">Đang tải...</option>';
+            palletSelect.disabled = true;
+            typeInput.value = '';
+            typeInput.disabled = true;
+            btnSave.disabled = true;
+
+            if (!job) {
+                palletSelect.innerHTML = '<option value="">-- Vui lòng chọn Job Type trước --</option>';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/get_pallets_for_edit', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({job_type: job})
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    palletSelect.innerHTML = '<option value="">-- Chọn Pallet --</option>';
+                    data.pallets.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.no;
+                        opt.innerText = 'Pallet ' + p.no;
+                        opt.setAttribute('data-type', p.type);
+                        palletSelect.appendChild(opt);
+                    });
+                    palletSelect.disabled = false;
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối server', 'danger');
+            }
+        });
+
+        palletSelect.addEventListener('change', () => {
+            const pallet = palletSelect.value;
+            if (pallet) {
+                const selectedOption = palletSelect.options[palletSelect.selectedIndex];
+                typeInput.value = selectedOption.getAttribute('data-type') || '';
+                typeInput.disabled = false;
+                btnSave.disabled = false;
+                typeInput.focus();
+            } else {
+                typeInput.value = '';
+                typeInput.disabled = true;
+                btnSave.disabled = true;
+            }
+        });
+
+        async function savePalletType() {
+            const job = jobSelect.value;
+            const pallet = palletSelect.value;
+            const newType = typeInput.value.trim();
+
+            if (!job || !pallet || !newType) {
+                showAlert('Vui lòng nhập đầy đủ thông tin', 'danger');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/update_pallet_type', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({job_type: job, pallet_no: pallet, new_type: newType})
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert('Cập nhật thành công!', 'success');
+                    typeInput.value = ''; // Reset input
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối server', 'danger');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -47,6 +47,15 @@ def login():
         if user and user.password == password:
             session['user'] = user.username
             session['role'] = user.role
+
+            # Tự động xóa log cũ hơn 30 ngày (giúp database không bị đầy qua các tháng)
+            try:
+                expiration_date = datetime.now() - timedelta(days=30)
+                Log.query.filter(Log.created_at < expiration_date).delete()
+                db.session.commit()
+            except Exception:
+                pass # Bỏ qua lỗi để không ảnh hưởng trải nghiệm đăng nhập
+
             return redirect(url_for('index'))
         else:
             return render_template('login.html', error="Sai tên đăng nhập hoặc mật khẩu")
@@ -508,7 +517,8 @@ def stats():
         Scanfile.jobno_type,
         Scanfile.pallet,
         Scanfile.pallet_type,
-        func.count(Scanfile.id)
+        func.count(Scanfile.id),
+        Scanfile.confirm
     ).filter(
         Scanfile.pallet != '',
         Scanfile.pallet != None
@@ -516,18 +526,19 @@ def stats():
         Scanfile.jobno,
         Scanfile.jobno_type,
         Scanfile.pallet,
-        Scanfile.pallet_type
+        Scanfile.pallet_type,
+        Scanfile.confirm
     ).all()
 
     stats_data = {}
     grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0}
 
-    for job_no, job_type, pallet_no, p_type, sscc_count in pallets:
+    for job_no, job_type, pallet_no, p_type, sscc_count, confirm in pallets:
         # Key: (Job No, Job Type)
         key = (job_no, job_type) 
         
         if key not in stats_data:
-            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0}
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N'}
         
         p_type_str = str(p_type) if p_type else ''
         
@@ -551,6 +562,9 @@ def stats():
         grand_total['total'] += increment
         stats_data[key]['total_box'] += sscc_count
         grand_total['total_box'] += sscc_count
+        
+        if confirm == 'Y':
+            stats_data[key]['confirm'] = 'Y'
 
     # 2. Thống kê hàng tồn (Chưa scan)
     remain_query = db.session.query(
@@ -1301,6 +1315,120 @@ def delete_employee():
             db.session.delete(emp)
             db.session.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# --- QUẢN LÝ SỬA PALLET TYPE (ADMIN ONLY) ---
+@app.route('/edit_pallet_type')
+def edit_pallet_type():
+    if 'user' not in session: return redirect(url_for('login'))
+    if session.get('role') != 'admin': return redirect(url_for('index'))
+    
+    # Lấy danh sách Job Type có trong hệ thống
+    job_types = []
+    try:
+        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).distinct().all() if r[0]]
+    except Exception:
+        pass
+        
+    return render_template('edit_pallet_type.html', job_types=job_types)
+
+@app.route('/api/admin/get_pallets_for_edit', methods=['POST'])
+def get_pallets_for_edit():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    data = request.json
+    job_type = data.get('job_type')
+    
+    try:
+        # Lấy danh sách pallet và type hiện tại
+        results = db.session.query(
+            Scanfile.pallet,
+            func.max(Scanfile.pallet_type)
+        ).filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet != '',
+            Scanfile.pallet != None
+        ).group_by(Scanfile.pallet).all()
+        
+        pallets = [{'no': r[0], 'type': r[1] if r[1] else ''} for r in results]
+        
+        # Sắp xếp pallet theo số (nếu là số)
+        pallets.sort(key=lambda x: int(x['no']) if x['no'].isdigit() else x['no'])
+        
+        return jsonify({'success': True, 'pallets': pallets})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/admin/update_pallet_type', methods=['POST'])
+def update_pallet_type():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+    data = request.json
+    job_type = data.get('job_type')
+    pallet_no = data.get('pallet_no')
+    new_type = data.get('new_type')
+    
+    if not all([job_type, pallet_no, new_type]):
+        return jsonify({'success': False, 'message': 'Thiếu thông tin'}), 400
+        
+    try:
+        # Cập nhật trong bảng Scanfile
+        Scanfile.query.filter(
+            Scanfile.jobno_type == job_type,
+            Scanfile.pallet == pallet_no
+        ).update({'pallet_type': new_type}, synchronize_session=False)
+        
+        # Cập nhật trong bảng Load (nếu đã khóa pallet)
+        Load.query.filter(
+            Load.jobno_type == job_type,
+            Load.pallet_no == pallet_no
+        ).update({'pallet_type': new_type}, synchronize_session=False)
+        
+        db.session.commit()
+        
+        # Ghi log
+        db.session.add(Log(
+            username=session.get('user'),
+            action='EDIT_PALLET_TYPE',
+            message=f"Đã sửa loại Pallet {pallet_no} (Job: {job_type}) thành {new_type}",
+            is_read=False
+        ))
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Cập nhật thành công'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/confirm_job_report', methods=['POST'])
+def confirm_job_report():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if session.get('role') != 'admin': return jsonify({'success': False, 'message': 'Forbidden'}), 403
+    
+    data = request.json
+    job_no = data.get('job_no')
+    job_type = data.get('job_type')
+    
+    try:
+        # Cập nhật cột confirm thành "Y" cho toàn bộ Job này
+        Scanfile.query.filter(
+            Scanfile.jobno == job_no,
+            Scanfile.jobno_type == job_type
+        ).update({'confirm': 'Y'}, synchronize_session=False)
+
+        # Ghi log xác nhận
+        db.session.add(Log(
+            username=session.get('user'),
+            action='CONFIRM_REPORT',
+            message=f"Admin đã xác nhận báo cáo cho Job: {job_no} ({job_type})",
+            is_read=False
+        ))
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Đã xác nhận Job {job_no}'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500

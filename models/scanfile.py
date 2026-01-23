@@ -26,5 +26,6 @@ class Scanfile(db.Model):
     jobscan=db.Column(db.String(255), nullable=False)
     userscan=db.Column(db.String(255), nullable=False)  # Thêm cột username nếu cần
     finish=db.Column(db.String(255), nullable=False)
+    confirm=db.Column(db.String(100), nullable=False)
     def __repr__(self):
         return f'<Scanfile ID:{self.id} JobNo:{self.jobno}>'

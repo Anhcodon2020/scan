@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Thống Kê Pallet</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
         .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -20,6 +21,12 @@
         
         .total-col { font-weight: bold; color: #007bff; background-color: #e8f0fe; }
         .job-col { text-align: left; font-weight: bold; color: #333; }
+        
+        .btn-confirm {
+            background-color: #28a745; color: white; border: none; 
+            padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px;
+        }
+        .btn-confirm:hover { background-color: #218838; }
     </style>
 </head>
 <body>
@@ -45,6 +52,10 @@
                     <th>Loose Carton</th>
                     <th>Tổng Pallet</th>
                     <th>Tổng Thùng (Box)</th>
+                    <th>Trạng thái</th>
+                    {% if session.get('role') == 'admin' %}
+                    <th>Hành động</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -57,6 +68,10 @@
                     <td style="color: #856404;">{{ grand_total['loose'] }}</td>
                     <td class="total-col" style="color: #856404;">{{ grand_total['total'] }}</td>
                     <td class="total-col" style="color: #856404;">{{ grand_total['total_box'] }}</td>
+                    <td></td>
+                    {% if session.get('role') == 'admin' %}
+                    <td style="background-color: #fff3cd;"></td>
+                    {% endif %}
                 </tr>
 
                 {% for (job_no, job_type), counts in stats.items() %}
@@ -69,10 +84,18 @@
                     <td>{{ counts['loose'] }}</td>
                     <td class="total-col">{{ counts['total'] }}</td>
                     <td class="total-col">{{ counts['total_box'] }}</td>
+                    <td style="font-weight: bold; color: {% if counts['confirm'] == 'Y' %}#28a745{% else %}#dc3545{% endif %};">
+                        {% if counts['confirm'] == 'Y' %}Xác nhận{% else %}Chưa xác nhận{% endif %}
+                    </td>
+                    {% if session.get('role') == 'admin' %}
+                    <td>
+                        <button class="btn-confirm" onclick="confirmJob('{{ job_no }}', '{{ job_type }}')">Xác nhận</button>
+                    </td>
+                    {% endif %}
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
+                    <td colspan="{% if session.get('role') == 'admin' %}10{% else %}9{% endif %}" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -192,6 +215,33 @@
                 totalRow.cells[6].innerText = sumBox;
             }
         });
+
+        function confirmJob(jobNo, jobType) {
+            Swal.fire({
+                title: 'Xác nhận báo cáo?',
+                text: `Bạn có chắc muốn xác nhận số liệu cho Job ${jobNo}?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Đồng ý',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/api/confirm_job_report', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({job_no: jobNo, job_type: jobType})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if(data.success) {
+                            Swal.fire('Thành công', data.message, 'success').then(() => location.reload());
+                        }
+                        else Swal.fire('Lỗi', data.message, 'error');
+                    })
+                    .catch(e => Swal.fire('Lỗi', 'Lỗi kết nối: ' + e, 'error'));
+                }
+            });
+        }
     </script>
 </body>
 </html>
