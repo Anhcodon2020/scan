@@ -53,7 +53,7 @@
                     <th>Tổng Pallet</th>
                     <th>Tổng Thùng (Box)</th>
                     <th>Trạng thái</th>
-                    {% if session.get('role') == 'admin' %}
+                    {% if session.get('role') != 'scanner' %}
                     <th>Hành động</th>
                     {% endif %}
                 </tr>
@@ -69,7 +69,7 @@
                     <td class="total-col" style="color: #856404;">{{ grand_total['total'] }}</td>
                     <td class="total-col" style="color: #856404;">{{ grand_total['total_box'] }}</td>
                     <td></td>
-                    {% if session.get('role') == 'admin' %}
+                    {% if session.get('role') != 'scanner' %}
                     <td style="background-color: #fff3cd;"></td>
                     {% endif %}
                 </tr>
@@ -87,15 +87,17 @@
                     <td style="font-weight: bold; color: {% if counts['confirm'] == 'Y' %}#28a745{% else %}#dc3545{% endif %};">
                         {% if counts['confirm'] == 'Y' %}Xác nhận{% else %}Chưa xác nhận{% endif %}
                     </td>
-                    {% if session.get('role') == 'admin' %}
+                    {% if session.get('role') != 'scanner' %}
                     <td>
+                        {% if session.get('role') == 'admin' %}
                         <button class="btn-confirm" onclick="confirmJob('{{ job_no }}', '{{ job_type }}')">Xác nhận</button>
+                        {% endif %}
                     </td>
                     {% endif %}
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="{% if session.get('role') == 'admin' %}10{% else %}9{% endif %}" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
+                    <td colspan="{% if session.get('role') != 'scanner' %}10{% else %}9{% endif %}" style="padding: 20px; color: #666;">Chưa có dữ liệu scan nào.</td>
                 </tr>
                 {% endfor %}
             </tbody>

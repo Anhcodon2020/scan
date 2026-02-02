@@ -223,8 +223,8 @@
             </a>
             {% endif %}
 
-            <!-- Chức năng Thống kê: Dành cho admin, printer và Docs -->
-            {% if session.get('role') in ['admin', 'printer', 'Docs'] %}
+            <!-- Chức năng Thống kê: Dành cho admin, printer, Docs và scanner -->
+            {% if session.get('role') in ['admin', 'printer', 'Docs', 'scanner'] %}
             <a href="/stats" class="card card-stats">
                 <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
                 <h3>Thống Kê</h3>
