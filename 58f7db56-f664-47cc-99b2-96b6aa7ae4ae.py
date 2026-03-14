@@ -1631,7 +1631,7 @@ def get_labor_assignment_list():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
     
     try:
-       # Query tất cả các phân công và join với dữ liệu liên quan để tối ưu
+        # Query tất cả các phân công và join với dữ liệu liên quan để tối ưu
         assignments_query = db.session.query(LaborAssignment).options(
             db.joinedload(LaborAssignment.inbound),
             db.joinedload(LaborAssignment.employee)
@@ -1639,11 +1639,10 @@ def get_labor_assignment_list():
 
         # Nhóm các phân công lại theo một "ca làm việc" logic
         assignments = []
-        
         grouped_assignments = {}
         for assign in assignments_query:
             # Ưu tiên group theo PackinglistNo nếu có, nếu không thì theo inbound_id
-            grouping_identifier = assign.inbound_id # Can be None
+            grouping_identifier = assign.inbound_id
             if assign.inbound and assign.inbound.PackinglistNo and assign.inbound.PackinglistNo.strip():
                 grouping_identifier = assign.inbound.PackinglistNo
 
@@ -1652,30 +1651,29 @@ def get_labor_assignment_list():
             if group_key not in grouped_assignments:
 
                 grouped_assignments[group_key] = {
-                    'id': assign.id,  # Dùng ID của record đầu tiên làm đại diện cho nhóm
+                    'id': assign.id, # Dùng ID của record đầu tiên làm đại diện cho nhóm
                     'packinglist_no': assign.packinglist_no, # Trả về Packing List No riêng của assignment
                     'work_date': assign.work_date.strftime('%Y-%m-%d') if assign.work_date else None,
                     'start_time': assign.start_time.strftime('%H:%M') if assign.start_time else None,
                     'end_time': assign.end_time.strftime('%H:%M') if assign.end_time else None,
-                    'inbound_id': grouping_identifier, # Can be None
+                    'inbound_id': grouping_identifier,
                     'inbound': {
                         'po': assign.inbound.po,
                         'contxe': assign.inbound.contxe,
                         'carton': 0,
                         'cbm': 0.0,
-                        'PackinglistNo': assign.inbound.PackinglistNo  if assign.inbound else None
+                        'PackinglistNo': assign.inbound.PackinglistNo
                     } if assign.inbound else None,
                     'employees': []
                     ,'_processed_inbounds': set() # Dùng để tránh cộng lặp
                 }
-
+            
             # Logic cộng dồn Carton/CBM cho nhóm
             group_item = grouped_assignments[group_key]
             if assign.inbound and assign.inbound.id not in group_item['_processed_inbounds']:
                 group_item['inbound']['carton'] += (assign.inbound.carton or 0)
                 group_item['inbound']['cbm'] += (assign.inbound.cbm or 0.0)
                 group_item['_processed_inbounds'].add(assign.inbound.id)
-
             if assign.employee:
                 # Tránh thêm nhân viên trùng lặp vào cùng một nhóm
                 if not any(e['id'] == assign.employee.id for e in group_item['employees']):
@@ -1683,12 +1681,11 @@ def get_labor_assignment_list():
                         'id': assign.employee.id,
                         'hovaten': assign.employee.hovaten
                     })
-        assignments = list(grouped_assignments.values())
 
-        return jsonify({'success': True, 'assignments': assignments})
+        return jsonify({'success': True, 'assignments': list(grouped_assignments.values())})
 
     except Exception as e:
-        app.logger.error(f"Error in get_labor_assignment_list: {e}", exc_info=True)
+        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/labor_assignment/save', methods=['POST'])
@@ -1808,6 +1805,7 @@ def get_logs():
         log_list = [{'id': l.id, 'username': l.username, 'message': l.message, 'created_at': l.created_at.strftime('%H:%M:%S %d/%m'), 'is_read': l.is_read} for l in logs]
         return jsonify({'success': True, 'logs': log_list})
     except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/mark_read', methods=['POST'])

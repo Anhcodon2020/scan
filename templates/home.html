@@ -185,6 +185,14 @@
         .card-emp { border-color: #e83e8c; }
         .card-emp .card-icon { color: #e83e8c; background-color: rgba(232, 62, 140, 0.1); }
         .card-emp:hover .card-icon { background-color: #e83e8c; color: white; }
+
+        .card-assign { border-color: #0ea5e9; }
+        .card-assign .card-icon { color: #0ea5e9; background-color: rgba(14, 165, 233, 0.1); }
+        .card-assign:hover .card-icon { background-color: #0ea5e9; color: white; }
+
+        .card-inbound { border-color: #20c997; }
+        .card-inbound .card-icon { color: #20c997; background-color: rgba(32, 201, 151, 0.1); }
+        .card-inbound:hover .card-icon { background-color: #20c997; color: white; }
         
         footer {
             text-align: center;
@@ -265,6 +273,24 @@
                 <div class="card-icon"><i class="fas fa-id-card"></i></div>
                 <h3>Quản Lý Nhân Viên</h3>
                 <p>Danh sách nhân viên, nguồn và trạng thái</p>
+            </a>
+            {% endif %}
+
+            <!-- Chức năng Phân công lao động: Chỉ dành cho admin -->
+            {% if session.get('role') == 'admin' %}
+            <a href="/assignment" class="card card-assign">
+                <div class="card-icon"><i class="fas fa-people-carry-box"></i></div>
+                <h3>Phân Công Lao Động</h3>
+                <p>Tạo lịch làm việc, theo dõi carton &amp; CBM</p>
+            </a>
+            {% endif %}
+
+            <!-- Chức năng Quản lý Inbound: Chỉ dành cho admin -->
+            {% if session.get('role') == 'admin' %}
+            <a href="/inbound" class="card card-inbound">
+                <div class="card-icon"><i class="fas fa-truck-loading"></i></div>
+                <h3>Quản Lý Inbound</h3>
+                <p>Quản lý thông tin hàng nhập kho</p>
             </a>
             {% endif %}
 

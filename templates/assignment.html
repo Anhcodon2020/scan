@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Phân Công Lao Động</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Select2 for multi-select dropdown -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+
+    <style>
+        body {
+            background-color: #f4f6f9;
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            border: none;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .table-hover tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        .table thead th {
+            background-color: #f8f9fc;
+            border-top: none;
+            border-bottom: 2px solid #e3e6f0;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        .badge {
+            font-size: 0.8em;
+            padding: 0.4em 0.7em;
+        }
+        .modal-header {
+            background-color: #f8f9fc;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .select2-container--bootstrap-5 .select2-selection {
+            min-height: calc(1.5em + 0.75rem + 2px);
+            padding: 0.375rem 0.75rem;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-barcode me-2"></i>WAREHOUSE SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/stats">Thống kê</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/assignment">Phân công</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/logout">Đăng xuất</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div id="app" class="container-fluid px-4">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="text-gray-800"><i class="fas fa-people-carry-box me-2"></i>Phân Công Lao Động</h3>
+            <button class="btn btn-primary" @click="openModal()"><i class="fas fa-plus me-2"></i>Thêm Phân Công</button>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-4">
+            <div class="card-body d-flex align-items-center gap-3">
+                <label for="filterDate" class="form-label mb-0 fw-bold">Ngày làm việc:</label>
+                <input type="date" id="filterDate" class="form-control" style="width: 200px;" v-model="filter.date">
+                <label for="filterPackingList" class="form-label mb-0 fw-bold ms-3">Packing List No:</label>
+                <input type="text" id="filterPackingList" class="form-control" style="width: 200px;" v-model="filter.packingListNo" placeholder="Tìm theo Packing List...">
+            </div>
+        </div>
+
+        <!-- Assignments Table -->
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">Ngày Làm Việc</th>
+                                <th>Nhân Viên</th>
+                                <th>Công Việc</th>
+                                <th>Thời Gian</th>
+                                <th>Thông Tin Job</th>
+                                <th>Sản Lượng</th>
+                                <th class="text-center">Hành Động</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="filteredAssignments.length === 0">
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="fas fa-folder-open fa-3x mb-3"></i>
+                                    <p>Không có dữ liệu cho ngày đã chọn.</p>
+                                </td>
+                            </tr>
+                            <tr v-for="item in filteredAssignments" :key="item.id">
+                                <td class="ps-4 fw-bold">{% raw %}{{ formatDate(item.work_date) }}{% endraw %}</td>
+                                <td>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <span v-for="emp in item.employees" class="badge bg-light text-dark border">{% raw %}{{ emp.hovaten }}{% endraw %}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge" :class="getTaskClass(item.inbound_id ? 'INBOUND' : 'OUTBOUND')">
+                                        <i class="fas me-1" :class="item.inbound_id ? 'fa-arrow-down' : 'fa-arrow-up'"></i>
+                                        {% raw %}
+                                        {{ item.inbound_id ? 'NHẬN HÀNG' : 'XUẤT HÀNG' }}
+                                        {% endraw %}
+                                    </span>
+                                </td>
+                                <td>{% raw %}{{ item.start_time }} - {{ item.end_time || '...' }}{% endraw %}</td>
+                                <td>
+                                    <div v-if="item.inbound">
+                                        <small class="d-block">PO: <strong class="text-primary">{% raw %}{{ item.inbound.po }}{% endraw %}</strong></small>
+                                        <small class="d-block">Cont/Xe: <strong>{% raw %}{{ item.inbound.contxe || 'N/A' }}{% endraw %}</strong></small>
+                                        <small class="d-block">Packing List: <strong class="text-info">{% raw %}{{ item.inbound.PackinglistNo || 'N/A' }}{% endraw %}</strong></small>
+                                    </div>
+                                    <div v-else>
+                                        <small class="text-muted">N/A</small>
+                                    </div>
+                                </td>
+                                <td>
+                                    <small class="d-block">Carton: <strong class="text-success">{% raw %}{{ item.inbound.carton || 'N/A' }}{% endraw %}</strong></small>
+                                    <small class="d-block">CBM: <strong class="text-info">{% raw %}{{ item.inbound.cbm || 'N/A' }}{% endraw %}</strong></small>
+                                </td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-outline-secondary me-2" @click="openModal(item)">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @click="deleteAssignment(item.id)">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                        <!-- Thêm Footer tổng cộng -->
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="5" class="text-end text-uppercase ps-4">Tổng cộng:</td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="text-success">{% raw %}{{ grandTotal.carton.toLocaleString() }}{% endraw %} thùng</span>
+                                        <span class="text-info">{% raw %}{{ grandTotal.cbm.toFixed(2) }}{% endraw %} m³</span>
+                                    </div>
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assignment Modal -->
+        <div class="modal fade" id="assignmentModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            {% raw %}
+                            {{ currentAssignment.id ? 'Chỉnh Sửa Phân Công' : 'Thêm Phân Công Mới' }}
+                            {% endraw %}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form @submit.prevent="saveAssignment">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Ngày làm việc <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" v-model="currentAssignment.work_date" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Nhân viên <span class="text-danger">*</span></label>
+                                    <select id="employeeSelect" class="form-control" multiple required>
+                                        <option v-for="emp in activeEmployees" :value="emp.id">{% raw %}{{ emp.hovaten }} ({{ emp.source }}){% endraw %}</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Giờ bắt đầu <span class="text-danger">*</span></label>
+                                    <input type="time" class="form-control" v-model="currentAssignment.start_time" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Giờ kết thúc</label>
+                                    <input type="time" class="form-control" v-model="currentAssignment.end_time">
+                                </div>
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label">Công việc (Inbound PO)</label>
+                                <select class="form-control" id="inboundSelect" @change="onInboundSelect">
+                                    <option value="">-- Chọn PO Inbound --</option>
+                                    <option v-for="ib in inbounds" :value="ib.id">
+                                        {% raw %}
+                                        PO: {{ ib.po }} | Cont/Xe: {{ ib.contxe }} | Packing List: {{ ib.PackinglistNo || 'N/A' }} | Ngày: {{ formatDate(ib.datercv) }}
+                                        {% endraw %}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Số lượng Carton (gợi ý)</label>
+                                    <input type="number" class="form-control" v-model="currentAssignment.carton" placeholder="Tự động điền khi chọn PO">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Số khối CBM (gợi ý)</label>
+                                    <input type="number" step="0.01" class="form-control" v-model="currentAssignment.cbm" placeholder="Tự động điền khi chọn PO">
+                                </div>
+                            </div>
+                            <div class="modal-footer pe-0">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-2"></i>Lưu Lại
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <script>
+        const { createApp, ref, onMounted, computed, watch } = Vue;
+
+        createApp({
+            setup() {
+                const assignments = ref([]);
+                const employees = ref([]);
+                const inbounds = ref([]);
+                const currentAssignment = ref({});
+                const filter = ref({
+                    date: new Date().toISOString().slice(0, 10),
+                    packingListNo: ''
+                });
+
+                let modalInstance = null;
+                let employeeSelect = null;
+                let inboundSelect = null;
+
+                // --- Computed Properties ---
+                const activeEmployees = computed(() => employees.value.filter(e => e.active === 1));
+                
+                const filteredAssignments = computed(() => {
+                    let results = assignments.value;
+
+                    // Filter by date
+                    if (filter.value.date) {
+                        results = results.filter(a => a.work_date === filter.value.date);
+                    }
+
+                    // Filter by Packing List No
+                    const searchTerm = filter.value.packingListNo.trim().toLowerCase();
+                    if (searchTerm) {
+                        results = results.filter(a => 
+                            a.inbound && a.inbound.PackinglistNo && a.inbound.PackinglistNo.toLowerCase().includes(searchTerm)
+                        );
+                    }
+
+                    return results;
+                });
+
+                // --- Tính tổng Carton và CBM hiển thị ---
+                const grandTotal = computed(() => {
+                    return filteredAssignments.value.reduce((acc, item) => {
+                        const carton = (item.inbound && item.inbound.carton) ? item.inbound.carton : 0;
+                        const cbm = (item.inbound && item.inbound.cbm) ? item.inbound.cbm : 0;
+                        return {
+                            carton: acc.carton + carton,
+                            cbm: acc.cbm + cbm
+                        };
+                    }, { carton: 0, cbm: 0 });
+                });
+
+                // --- Data Fetching ---
+                const fetchData = async (url) => {
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            try {
+                                const errorData = await response.json();
+                                throw new Error(`Lỗi HTTP! status: ${response.status} - ${errorData.message || 'Không có thông tin chi tiết'}`);
+                            } catch (jsonError) {
+                                // If JSON parsing fails, use the status text
+                                throw new Error(`Lỗi HTTP! status: ${response.status} - ${response.statusText}`);
+                            }
+                        }
+                        const data = await response.json();
+                        return data.success ? data : Promise.reject(data.message);
+                    } catch (error) {
+                        console.error(`Error fetching from ${url}:`, error);
+                        alert(`Lỗi tải dữ liệu: ${error.message}`);
+                        return null;
+                    }
+                };
+
+                const fetchAssignments = async () => {
+                    const data = await fetchData('/api/labor_assignment/list');
+                    if (data) assignments.value = data.assignments;
+                };
+
+                const fetchEmployees = async () => {
+                    const data = await fetchData('/api/employees/list');
+                    if (data) employees.value = data.employees;
+                };
+
+                const fetchInbounds = async () => {
+                    const data = await fetchData('/api/inbound/list');
+                    if (data) inbounds.value = data.inbounds;
+                };
+
+                // --- Modal and Form Handling ---
+                const openModal = (item = null) => {
+                    if (item) {
+                        // Edit mode
+                        currentAssignment.value = { 
+                            ...item,
+                            employee_ids: item.employees.map(e => e.id)
+                        };
+                    } else {
+                        // Add mode
+                        currentAssignment.value = {
+                            work_date: new Date().toISOString().slice(0, 10),
+                            start_time: '08:00',
+                            employee_ids: []
+                        };
+                    }
+                    
+                    // Update Select2 after Vue updates the DOM
+                    Vue.nextTick(() => {
+                        $('#employeeSelect').val(currentAssignment.value.employee_ids).trigger('change');
+                        $('#inboundSelect').val(currentAssignment.value.inbound_id).trigger('change');
+                    });
+
+                    modalInstance.show();
+                };
+
+                const saveAssignment = async () => {
+                    // Get values from Select2
+                    currentAssignment.value.employee_ids = $('#employeeSelect').val().map(Number);
+                    currentAssignment.value.inbound_id = $('#inboundSelect').val();
+
+                    if (currentAssignment.value.employee_ids.length === 0) {
+                        alert('Vui lòng chọn ít nhất một nhân viên.');
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/labor_assignment/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(currentAssignment.value)
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            await fetchAssignments();
+                            modalInstance.hide();
+                        } else {
+                            throw new Error(result.message);
+                        }
+                    } catch (error) {
+                        alert(`Lỗi lưu dữ liệu: ${error.message}`);
+                    }
+                };
+
+                const deleteAssignment = async (id) => {
+                    if (!confirm('Bạn có chắc chắn muốn xóa mục này không?')) return;
+
+                    try {
+                        const response = await fetch('/api/labor_assignment/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            await fetchAssignments();
+                        } else {
+                            throw new Error(result.message);
+                        }
+                    } catch (error) {
+                        alert(`Lỗi xóa dữ liệu: ${error.message}`);
+                    }
+                };
+
+                const onInboundSelect = (event) => {
+                    const selectedId = event.target.value;
+                    if (selectedId) {
+                        const selectedInbound = inbounds.value.find(ib => ib.id == selectedId);
+                        if (selectedInbound) {
+                            currentAssignment.value.carton = selectedInbound.carton;
+                            currentAssignment.value.cbm = selectedInbound.cbm;
+                        }
+                    } else {
+                        currentAssignment.value.carton = null;
+                        currentAssignment.value.cbm = null;
+                    }
+                };
+
+                // --- Lifecycle Hook ---
+                onMounted(async () => {
+                    await Promise.all([fetchAssignments(), fetchEmployees(), fetchInbounds()]);
+                    
+                    modalInstance = new bootstrap.Modal(document.getElementById('assignmentModal'));
+
+                    // Initialize Select2
+                    employeeSelect = $('#employeeSelect').select2({
+                        theme: 'bootstrap-5',
+                        dropdownParent: $('#assignmentModal'),
+                        placeholder: 'Chọn nhân viên'
+                    });
+                    inboundSelect = $('#inboundSelect').select2({
+                        theme: 'bootstrap-5',
+                        dropdownParent: $('#assignmentModal')
+                    });
+                });
+
+                // --- Helper Functions ---
+                const formatDate = (dateString) => {
+                    if (!dateString) return '';
+                    const [year, month, day] = dateString.split('-');
+                    return `${day}/${month}/${year}`;
+                };
+
+                const getTaskClass = (task) => {
+                    const map = {
+                        'INBOUND': 'bg-primary',
+                        'OUTBOUND': 'bg-info',
+                    };
+                    return map[task] || 'bg-secondary';
+                };
+
+                return {
+                    assignments,
+                    employees,
+                    inbounds,
+                    currentAssignment,
+                    filter,
+                    activeEmployees,
+                    filteredAssignments,
+                    openModal,
+                    saveAssignment,
+                    deleteAssignment,
+                    onInboundSelect,
+                    formatDate,
+                    getTaskClass,
+                    grandTotal
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

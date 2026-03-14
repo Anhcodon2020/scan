@@ -134,13 +134,24 @@
 
         async function fetchDashboardData() {
             try {
-                const response = await fetch('/api/scan_dashboard_data');
-                if (!response.ok) throw new Error(`Lỗi HTTP! status: ${response.status}`);
+                const response = await fetch('/api/scan_dashboard_data');                
+                if (!response.ok) {
+                    // Try to get JSON error message from the server
+                    try {
+                        const errorData = await response.json();
+                        throw new Error(`Lỗi HTTP! status: ${response.status} - ${errorData.message || 'Không có thông tin chi tiết'}`);
+                    } catch (jsonError) {
+                        // If JSON parsing fails, use the status text
+                        throw new Error(`Lỗi HTTP! status: ${response.status} - ${response.statusText}`);
+                    }
+                }
+
                 const data = await response.json();
 
                 if (data.success) {
                     errorMessage.style.display = 'none';
                     dashboardContainer.innerHTML = ''; // Xóa thẻ cũ
+
                     if (data.stats.length > 0) {
                         data.stats.forEach(job => {
                             dashboardContainer.innerHTML += createJobCard(job);
@@ -148,7 +159,7 @@
                     } else {
                         dashboardContainer.innerHTML = '<p class="text-center">Không có dữ liệu Job Type để hiển thị.</p>';
                     }
-                    
+
                     // Cập nhật tổng số hôm nay
                     if (data.total_today !== undefined) {
                         totalTodaySpan.textContent = data.total_today;
@@ -158,7 +169,7 @@
                     throw new Error(data.message || 'Lỗi không xác định từ server.');
                 }
             } catch (error) {
-                console.error('Lỗi khi tải dữ liệu dashboard:', error);
+                console.error('Lỗi khi tải dữ liệu:', error);
                 errorMessage.textContent = `Lỗi khi tải dữ liệu: ${error.message}`;
                 errorMessage.style.display = 'block';
             } finally {
@@ -172,5 +183,6 @@
             setInterval(fetchDashboardData, 10000); // Tải lại sau mỗi 10 giây
         });
     </script>
+
 </body>
 </html>
