@@ -109,9 +109,11 @@ def _parse_time(value):
 @app.route('/')
 def index():
     if 'user' not in session:
-        return redirect(url_for('login'))
-    # Lưu ý: Bạn cần có file templates/home.html
-    return render_template('home.html')
+       return redirect(url_for('login'))
+
+    labor_assignments = LaborAssignment.query.all()
+
+    return render_template('home.html', labor_assignments=labor_assignments)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1341,7 +1343,7 @@ def employees_manage():
 def get_employees_list():
     if 'user' not in session: return jsonify({'success': False}), 401
     try:
-        employees = Employee.query.order_by(Employee.created_at.desc()).all()
+        employees = Employee.query.order_by(Employee.source.desc()).all()
         
         stats = {'KLN': 0, 'PST': 0, 'PNT': 0, 'TOTAL': 0}
         data = []
@@ -1655,7 +1657,7 @@ def get_labor_assignment_list():
                     'id': assign.id,  # Dùng ID của record đầu tiên làm đại diện cho nhóm
                     'packinglist_no': assign.packinglist_no, # Trả về Packing List No riêng của assignment
                     'work_date': assign.work_date.strftime('%Y-%m-%d') if assign.work_date else None,
-                    'start_time': assign.start_time.strftime('%H:%M') if assign.start_time else None,
+                    'start_time': assign.start_time.strftime('%H:%M') if assign.start_time else None, 
                     'end_time': assign.end_time.strftime('%H:%M') if assign.end_time else None,
                     'inbound_id': grouping_identifier, # Can be None
                     'inbound': {
@@ -1685,11 +1687,32 @@ def get_labor_assignment_list():
                     })
         assignments = list(grouped_assignments.values())
 
+        # Tính toán CBM trung bình cho mỗi nhóm
+        for assignment in assignments:
+            packinglist_no = assignment.get('packinglist_no') #Can be None
+            if packinglist_no:
+                # Lấy tổng CBM từ bảng Inbound cho packinglist_no này
+                total_cbm = db.session.query(func.sum(Inbound.cbm)).filter_by(PackinglistNo=packinglist_no).scalar() or 0.0
+                assignment['inbound']['cbm'] = float(total_cbm)
+                assignment['inbound']['cbm'] = float(total_cbm) #type:ignore
+
+
+
+
+
+
+
         return jsonify({'success': True, 'assignments': assignments})
+
 
     except Exception as e:
         app.logger.error(f"Error in get_labor_assignment_list: {e}", exc_info=True)
+        app.logger.error(f"Error in get_labor_assignment_list: {e}", exc_info=True) #type:ignore
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
+
 
 @app.route('/api/labor_assignment/save', methods=['POST'])
 def save_labor_assignment():
@@ -1730,8 +1753,16 @@ def save_labor_assignment():
         inbound_id = data.get('inbound_id')
         if str(inbound_id).strip() == '': inbound_id = None
 
-        # Xử lý Packing List No: Ưu tiên dữ liệu gửi lên, nếu không có thì lấy từ PO (Inbound)
+        # Xử lý Packing List No và Inbound ID
         packinglist_no = data.get('packinglist_no')
+        
+        # Nếu có Packing List nhưng chưa có inbound_id, tìm ID từ bảng Inbound
+        if packinglist_no and not inbound_id:
+            inbound_obj = Inbound.query.filter_by(PackinglistNo=packinglist_no).first()
+            if inbound_obj:
+                inbound_id = inbound_obj.id
+        
+        # Ngược lại: Nếu có inbound_id nhưng chưa có tên Packing List, lấy từ DB
         if inbound_id and not packinglist_no:
             inbound_item = Inbound.query.get(inbound_id)
             if inbound_item and hasattr(inbound_item, 'PackinglistNo'):
@@ -1776,6 +1807,69 @@ def delete_labor_assignment():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/labor_assignments')
+def labor_assignments_page():
+    if 'user' not in session or session.get('role') != 'admin':
+        return redirect(url_for('index'))
+    
+    # Tải danh sách phân công, eager load 'employee' để tránh N+1 query
+    labor_assignments = LaborAssignment.query.options(
+        db.joinedload(LaborAssignment.employee)
+    ).order_by(LaborAssignment.work_date.desc(), LaborAssignment.id.desc()).all()
+
+    # Lấy danh sách packinglist_no duy nhất từ các phân công
+    packing_list_nos = {la.packinglist_no for la in labor_assignments if la.packinglist_no}
+
+    if packing_list_nos:
+        # Lấy tổng CBM cho mỗi packing list
+        total_cbm_q = db.session.query(
+            Inbound.PackinglistNo, func.sum(Inbound.cbm)
+        ).filter(Inbound.PackinglistNo.in_(packing_list_nos)).group_by(Inbound.PackinglistNo).all()
+        total_cbm_map = {pl[0]: float(pl[1] or 0) for pl in total_cbm_q}
+
+        # Lấy số lượng assignment cho mỗi packing list
+        assign_count_q = db.session.query(
+            LaborAssignment.packinglist_no, func.count(LaborAssignment.id)
+        ).filter(LaborAssignment.packinglist_no.in_(packing_list_nos)).group_by(LaborAssignment.packinglist_no).all()
+        assign_count_map = {pl[0]: pl[1] for pl in assign_count_q}
+
+        # Tính toán và gán CBM cho mỗi assignment (không lưu vào DB)
+        for assignment in labor_assignments:
+            if assignment.packinglist_no in total_cbm_map:
+                total_cbm = total_cbm_map.get(assignment.packinglist_no, 0)
+                count = assign_count_map.get(assignment.packinglist_no, 1)
+                assignment.cbm = total_cbm / count if count > 0 else 0
+            else:
+                # Gán giá trị cbm từ DB nếu không có packinglist_no để hiển thị
+                assignment.cbm = assignment.cbm or 0
+
+    employees = Employee.query.filter_by(active=1).order_by(Employee.hovaten).all()
+    packing_lists = [r[0] for r in db.session.query(Inbound.PackinglistNo).filter(Inbound.PackinglistNo != '', Inbound.PackinglistNo != None).group_by(Inbound.PackinglistNo).order_by(func.max(Inbound.datercv).desc()).all()]
+    
+    # Tính tổng CBM cho từng Packing List
+    cbm_data = db.session.query(Inbound.PackinglistNo, func.sum(Inbound.cbm)).filter(Inbound.PackinglistNo != '', Inbound.PackinglistNo != None).group_by(Inbound.PackinglistNo).all()
+    cbm_map = {item[0]: (item[1] or 0) for item in cbm_data}
+    return render_template('labor_assignments.html', labor_assignments=labor_assignments, employees=employees, packing_lists=packing_lists, cbm_map=cbm_map)
+
+
+@app.route('/api/create_labor_assignment', methods=['POST'])
+def create_labor_assignment():
+    # Extract data from the request
+    data = request.get_json()
+
+    # Process the data and create a new labor assignment in the database
+    # ...
+
+    # Return a success response
+    return jsonify({'success': True, 'message': 'Labor assignment created successfully'})
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---
