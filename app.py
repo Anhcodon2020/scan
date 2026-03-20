@@ -978,9 +978,10 @@ def outbound_details():
             data.append({
                 'parentPO': pick(m, ['parentpo', 'parent_po', 'parentPO', 'ParentPO']),
                 'childPO': pick(m, ['childpo', 'child_po', 'childPO', 'ChildPO']),
-                'release_key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key','rsl']),
+                'release_key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key', 'rsl']),
                 'sku': pick(m, ['sku', 'SKU']),
-                'cbm': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default='')
+                'cbm': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default=''),
+                'carton': pick(m, ['carton', 'Carton'], default='')
             })
         return jsonify({'success': True, 'rows': data})
     except Exception as e:
@@ -1014,12 +1015,35 @@ def outbound_export():
             records.append({
                 'ParentPO': pick(m, ['parentpo', 'parent_po', 'parentPO', 'ParentPO']),
                 'ChildPO': pick(m, ['childpo', 'child_po', 'childPO', 'ChildPO']),
-                'Release_Key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key','rsl']),
+                'Release_Key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key', 'rsl']),
                 'SKU': pick(m, ['sku', 'SKU']),
-                'CBM': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default='')
+                'CBM': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default=''),
+                'Carton': pick(m, ['carton', 'Carton'], default='')
             })
 
-        df = pd.DataFrame(records, columns=['ParentPO', 'ChildPO', 'Release_Key', 'SKU', 'CBM'])
+        df = pd.DataFrame(records, columns=['ParentPO', 'ChildPO', 'Release_Key', 'SKU', 'CBM', 'Carton'])
+
+        # Thêm dòng tổng
+        def _safe_sum(key):
+            total = 0
+            for rec in records:
+                val = rec.get(key, '')
+                try:
+                    total += float(val) if str(val).strip() != '' else 0
+                except (TypeError, ValueError):
+                    continue
+            return total
+
+        total_cbm = _safe_sum('CBM')
+        total_carton = _safe_sum('Carton')
+        df.loc[len(df)] = {
+            'ParentPO': 'TOTAL',
+            'ChildPO': '',
+            'Release_Key': '',
+            'SKU': '',
+            'CBM': total_cbm,
+            'Carton': total_carton
+        }
         output = io.BytesIO()
         try:
             # Ưu tiên ghi Excel nếu có openpyxl
