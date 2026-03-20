@@ -915,11 +915,11 @@ def search_outbound():
     if not jobno: return jsonify({'success': False, 'message': 'Thiếu Job No'})
     
     try:
-        # Tìm container trong bảng outbound, sắp xếp theo ngày đóng hàng
-        # Giả định cột ngày là packing_date hoặc created_at
+        # Tìm container trong bảng outbound, sắp xếp theo ngày (dùng datercv hoặc datestuff nếu có)
         query = text("""
-            SELECT DISTINCT container, packing_date 
-            FROM outbound 
+            SELECT DISTINCT container,
+                COALESCE(datercv, datestuff) AS packing_date
+            FROM outbound
             WHERE jobno = :jobno AND container IS NOT NULL AND container != ''
             ORDER BY packing_date ASC
         """)
@@ -929,6 +929,123 @@ def search_outbound():
         return jsonify({'success': True, 'containers': containers})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+# --- OUTBOUND EXPORT PAGE ---
+@app.route('/outbound')
+def outbound_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('outbound.html')
+
+@app.route('/api/outbound/jobnos')
+def outbound_jobnos():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    try:
+        query = text("""
+            SELECT DISTINCT jobno
+            FROM outbound
+            WHERE (container IS NULL OR TRIM(container) = '')
+            ORDER BY jobno
+        """)
+        rows = db.session.execute(query).fetchall()
+        jobnos = [r[0] for r in rows if r[0]]
+        return jsonify({'success': True, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound/details')
+def outbound_details():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    jobno = request.args.get('jobno')
+    if not jobno:
+        return jsonify({'success': False, 'message': 'Thiếu Job No'}), 400
+    try:
+        query = text("""
+            SELECT *
+            FROM outbound
+            WHERE jobno = :jobno AND (container IS NULL OR TRIM(container) = '')
+        """)
+        rows = db.session.execute(query, {'jobno': jobno}).fetchall()
+
+        def pick(mapping, candidates, default=''):
+            for key in candidates:
+                if key in mapping and mapping[key] is not None:
+                    return mapping[key]
+            return default
+
+        data = []
+        for row in rows:
+            m = row._mapping
+            data.append({
+                'parentPO': pick(m, ['parentpo', 'parent_po', 'parentPO', 'ParentPO']),
+                'childPO': pick(m, ['childpo', 'child_po', 'childPO', 'ChildPO']),
+                'release_key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key','rsl']),
+                'sku': pick(m, ['sku', 'SKU']),
+                'cbm': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default='')
+            })
+        return jsonify({'success': True, 'rows': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound/export', methods=['GET'])
+def outbound_export():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    jobno = request.args.get('jobno')
+    if not jobno:
+        return jsonify({'success': False, 'message': 'Thiếu Job No'}), 400
+    try:
+        query = text("""
+            SELECT *
+            FROM outbound
+            WHERE jobno = :jobno AND (container IS NULL OR TRIM(container) = '')
+        """)
+        rows = db.session.execute(query, {'jobno': jobno}).fetchall()
+        if not rows:
+            return jsonify({'success': False, 'message': 'Không tìm thấy dữ liệu phù hợp'}), 404
+
+        def pick(mapping, candidates, default=''):
+            for key in candidates:
+                if key in mapping and mapping[key] is not None:
+                    return mapping[key]
+            return default
+
+        records = []
+        for row in rows:
+            m = row._mapping
+            records.append({
+                'ParentPO': pick(m, ['parentpo', 'parent_po', 'parentPO', 'ParentPO']),
+                'ChildPO': pick(m, ['childpo', 'child_po', 'childPO', 'ChildPO']),
+                'Release_Key': pick(m, ['release_key', 'relese_key', 'releasekey', 'ReleaseKey', 'Release_Key','rsl']),
+                'SKU': pick(m, ['sku', 'SKU']),
+                'CBM': pick(m, ['cbm', 'CBM', 'cbm_pallet', 'cbmPallet'], default='')
+            })
+
+        df = pd.DataFrame(records, columns=['ParentPO', 'ChildPO', 'Release_Key', 'SKU', 'CBM'])
+        output = io.BytesIO()
+        try:
+            # Ưu tiên ghi Excel nếu có openpyxl
+            import openpyxl  # noqa: F401
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Outbound')
+            output.seek(0)
+            filename = f"{jobno}.xlsx"
+            return Response(
+                output.getvalue(),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                headers={'Content-Disposition': f'attachment; filename={filename}'}
+            )
+        except ImportError:
+            # Fallback CSV nếu thiếu openpyxl
+            output = io.BytesIO()
+            output.write(df.to_csv(index=False).encode('utf-8-sig'))
+            output.seek(0)
+            filename = f"{jobno}.csv"
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename={filename}'}
+            )
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/import_shipment', methods=['POST'])
 def import_shipment_api():

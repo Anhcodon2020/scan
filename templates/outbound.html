@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outbound | Export Excel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #f4f6f9; }
+        .card { border: none; border-radius: 0.75rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .navbar-brand { font-weight: 700; letter-spacing: 0.5px; }
+        .table thead th { background-color: #f8f9fc; text-transform: uppercase; font-size: 0.8rem; color: #6c757d; }
+        .badge-rounded { border-radius: 999px; }
+    </style>
+</head>
+<body>
+    {% raw %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-dolly-flatbed me-2"></i>WAREHOUSE SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/stats">Thống kê</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/assignment">Phân công</a></li>
+                    <li class="nav-item"><a class="nav-link active" aria-current="page" href="/outbound">Outbound</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/logout">Đăng xuất</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div id="app" class="container-lg px-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h4 class="mb-0 text-dark"><i class="fas fa-file-export me-2"></i>Chứng từ Outbound</h4>
+                <small class="text-muted">Chọn Job No chưa có số cont để xuất file Excel (ParentPO, ChildPO, Release Key, SKU, CBM).</small>
+            </div>
+            <button class="btn btn-outline-secondary d-lg-none" @click="fetchJobnos"><i class="fas fa-rotate"></i></button>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-5">
+                        <label class="form-label fw-semibold text-secondary">Job No (chưa có cont)</label>
+                        <select class="form-select" v-model="selectedJob" @change="loadDetails">
+                            <option value="">-- Chọn Job No --</option>
+                            <option v-for="job in jobnos" :key="job" :value="job">{{ job }}</option>
+                        </select>
+                    </div>
+                    <div class="col-md-7 d-flex gap-2 mt-2 mt-md-4">
+                        <button class="btn btn-outline-primary" @click="fetchJobnos" :disabled="loading">
+                            <i class="fas fa-rotate me-2"></i>Làm mới danh sách
+                        </button>
+                        <button class="btn btn-success" @click="exportExcel" :disabled="!selectedJob || loading || rows.length === 0">
+                            <i class="fas fa-file-excel me-2"></i>Xuất Excel
+                        </button>
+                        <div v-if="loading" class="d-flex align-items-center text-muted">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Đang xử lý...
+                        </div>
+                    </div>
+                </div>
+                <div v-if="message" class="alert alert-warning mt-3 py-2 mb-0">{{ message }}</div>
+            </div>
+        </div>
+
+        <div class="card" v-if="selectedJob">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Chi tiết Job: <span class="badge bg-secondary badge-rounded">{{ selectedJob }}</span></span>
+                <span class="text-muted small" v-if="rows.length">Tổng dòng: {{ rows.length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div v-if="rows.length" class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th scope="col">ParentPO</th>
+                                <th scope="col">ChildPO</th>
+                                <th scope="col">Release Key</th>
+                                <th scope="col">SKU</th>
+                                <th scope="col" class="text-end">CBM</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, idx) in rows" :key="idx">
+                                <td>{{ row.parentPO }}</td>
+                                <td>{{ row.childPO }}</td>
+                                <td>{{ row.release_key }}</td>
+                                <td>{{ row.sku }}</td>
+                                <td class="text-end">{{ formatNumber(row.cbm) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-else class="p-4 text-center text-muted">
+                    Không có dữ liệu cho Job No này.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3"></script>
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const jobnos = ref([]);
+                const selectedJob = ref('');
+                const rows = ref([]);
+                const loading = ref(false);
+                const message = ref('');
+
+                const fetchJobnos = async () => {
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch('/api/outbound/jobnos');
+                        const data = await res.json();
+                        if (data.success) {
+                            jobnos.value = data.jobnos || [];
+                            if (!jobnos.value.includes(selectedJob.value)) {
+                                selectedJob.value = '';
+                                rows.value = [];
+                            }
+                            if (!jobnos.value.length) {
+                                message.value = 'Không có Job No nào chưa có số cont.';
+                            }
+                        } else {
+                            message.value = data.message || 'Không lấy được danh sách Job No.';
+                        }
+                    } catch (err) {
+                        message.value = 'Lỗi kết nối máy chủ.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const loadDetails = async () => {
+                    if (!selectedJob.value) {
+                        rows.value = [];
+                        return;
+                    }
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch(`/api/outbound/details?jobno=${encodeURIComponent(selectedJob.value)}`);
+                        const data = await res.json();
+                        if (data.success) {
+                            rows.value = data.rows || [];
+                            if (!rows.value.length) {
+                                message.value = 'Không tìm thấy dữ liệu cho Job No này.';
+                            }
+                        } else {
+                            rows.value = [];
+                            message.value = data.message || 'Không tải được dữ liệu.';
+                        }
+                    } catch (err) {
+                        rows.value = [];
+                        message.value = 'Lỗi kết nối máy chủ.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const exportExcel = async () => {
+                    if (!selectedJob.value) return;
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch(`/api/outbound/export?jobno=${encodeURIComponent(selectedJob.value)}`);
+                        const contentType = res.headers.get('Content-Type') || '';
+                        const disposition = res.headers.get('Content-Disposition') || '';
+                        if (!res.ok && contentType.includes('application/json')) {
+                            const err = await res.json();
+                            throw new Error(err.message || 'Không xuất được file.');
+                        }
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const nameFromHeader = (() => {
+                            const match = /filename\\s*=\\s*\"?([^\";]+)/i.exec(disposition);
+                            return match ? match[1] : null;
+                        })();
+                        a.download = nameFromHeader || `${selectedJob.value}${contentType.includes('excel') ? '.xlsx' : '.csv'}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(url);
+                    } catch (err) {
+                        message.value = err.message || 'Không xuất được file.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const formatNumber = (val) => {
+                    if (val === '' || val === null || val === undefined) return '';
+                    const num = Number(val);
+                    if (Number.isNaN(num)) return val;
+                    return num.toLocaleString('en-US', { maximumFractionDigits: 3 });
+                };
+
+                onMounted(() => {
+                    fetchJobnos();
+                });
+
+                return { jobnos, selectedJob, rows, loading, message, fetchJobnos, loadDetails, exportExcel, formatNumber };
+            }
+        }).mount('#app');
+    </script>
+    {% endraw %}
+</body>
+</html>

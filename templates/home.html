@@ -193,6 +193,10 @@
         .card-inbound { border-color: #20c997; }
         .card-inbound .card-icon { color: #20c997; background-color: rgba(32, 201, 151, 0.1); }
         .card-inbound:hover .card-icon { background-color: #20c997; color: white; }
+
+        .card-outbound { border-color: #0d6efd; }
+        .card-outbound .card-icon { color: #0d6efd; background-color: rgba(13, 110, 253, 0.1); }
+        .card-outbound:hover .card-icon { background-color: #0d6efd; color: white; }
         
         footer {
             text-align: center;
@@ -291,6 +295,15 @@
                 <div class="card-icon"><i class="fas fa-truck-loading"></i></div>
                 <h3>Quản Lý Inbound</h3>
                 <p>Quản lý thông tin hàng nhập kho</p>
+            </a>
+            {% endif %}
+
+            <!-- Outbound: Xuất Excel job chưa có container -->
+            {% if session.get('role') in ['admin', 'Docs', 'printer', 'scanner'] %}
+            <a href="/outbound" class="card card-outbound">
+                <div class="card-icon"><i class="fas fa-file-export"></i></div>
+                <h3>Outbound</h3>
+                <p>Chứng từ job chưa có số cont</p>
             </a>
             {% endif %}
 
