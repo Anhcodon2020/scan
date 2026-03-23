@@ -1,8 +1,7 @@
 Flask
 Flask-SQLAlchemy
-python-dotenv
 pandas
+python-dotenv
+pymysql
 openpyxl
-PyMySQL
-gunicorn
-cryptography
+xlsxwriter

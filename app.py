@@ -623,29 +623,38 @@ def stats():
     ).all()
 
     stats_data = {}
-    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0}
+    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'total_cbm': 0, 'total_weight': 0}
 
     for job_no, job_type, pallet_no, p_type, sscc_count, confirm in pallets:
         # Key: (Job No, Job Type)
         key = (job_no, job_type) 
         
         if key not in stats_data:
-            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N'}
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'cbm': 0, 'weight': 0}
         
         p_type_str = str(p_type) if p_type else ''
         
         # Nếu là loose hoặc loosecarton thì tính theo số lượng SSCC, ngược lại tính là 1 pallet
         increment = sscc_count if 'loose' in p_type_str.lower() else 1
         
+        curr_cbm = 0
+        curr_weight = 0
+
         if '1.2' in p_type_str:
             stats_data[key]['1.2'] += increment
             grand_total['1.2'] += increment
+            curr_cbm = increment * 0.1404
+            curr_weight = increment * 15.5
         elif '1.6' in p_type_str:
             stats_data[key]['1.6'] += increment
             grand_total['1.6'] += increment
+            curr_cbm = increment * 0.1872
+            curr_weight = increment * 20.5
         elif '1.9' in p_type_str:
             stats_data[key]['1.9'] += increment
             grand_total['1.9'] += increment
+            curr_cbm = increment * 0.2223
+            curr_weight = increment * 22
         else:
             stats_data[key]['loose'] += increment
             grand_total['loose'] += increment
@@ -655,6 +664,12 @@ def stats():
         stats_data[key]['total_box'] += sscc_count
         grand_total['total_box'] += sscc_count
         
+        # Cộng dồn CBM và Weight
+        stats_data[key]['cbm'] += curr_cbm
+        stats_data[key]['weight'] += curr_weight
+        grand_total['total_cbm'] += curr_cbm
+        grand_total['total_weight'] += curr_weight
+
         if confirm == 'Y':
             stats_data[key]['confirm'] = 'Y'
 
@@ -679,7 +694,7 @@ def stats():
         
         # [FIX] Đảm bảo Job có hàng tồn nhưng chưa scan pallet nào vẫn hiện lên bảng
         if key not in stats_data:
-            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N'}
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'cbm': 0, 'weight': 0}
 
     return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats, 
                            jobs=job_list, selected_job=selected_job)
@@ -892,6 +907,7 @@ def export_pallet_data():
         
         writer.writerow(['Pallet No', 'Job Type', 'Pallet Type', 'SKU', 'Quantity', 'Weight (Est)', 'Tag Label', 'Job Scan'])
 
+        data_list = []
         for row in results:
             master_item = MasterData.query.filter_by(sku=row.sku).first()
             sku_weight = master_item.weight if master_item and master_item.weight else 0
@@ -899,8 +915,24 @@ def export_pallet_data():
             
             writer.writerow([row.pallet, job_type, row.pallet_type, row.sku, row.sscc_count, total_weight, row.tag_label, row.jobscan])
             
+            data_list.append({
+                'Pallet No': row.pallet,
+                'Job Type': job_type,
+                'Pallet Type': row.pallet_type,
+                'SKU': row.sku,
+                'Quantity': row.sscc_count,
+                'Weight (Est)': total_weight,
+                'Tag Label': row.tag_label,
+                'Job Scan': row.jobscan
+            })
+
+        df = pd.DataFrame(data_list)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Pallet Data')
+        
         output.seek(0)
-        return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=pallet_data_{job_type}.csv"})
+        return Response(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment;filename=pallet_data_{job_type}.xlsx"})
     except Exception as e:
         return f"Lỗi: {str(e)}", 500
 
@@ -1058,16 +1090,23 @@ def outbound_export():
                 headers={'Content-Disposition': f'attachment; filename={filename}'}
             )
         except ImportError:
-            # Fallback CSV nếu thiếu openpyxl
-            output = io.BytesIO()
-            output.write(df.to_csv(index=False).encode('utf-8-sig'))
-            output.seek(0)
-            filename = f"{jobno}.csv"
-            return Response(
-                output.getvalue(),
-                mimetype='text/csv',
-                headers={'Content-Disposition': f'attachment; filename={filename}'}
-            )
+            # Thử engine khác (xlsxwriter) nếu thiếu openpyxl
+            try:
+                import xlsxwriter  # noqa: F401
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Outbound')
+                output.seek(0)
+                filename = f"{jobno}.xlsx"
+                return Response(
+                    output.getvalue(),
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'}
+                )
+            except ImportError:
+                return jsonify({
+                    'success': False,
+                    'message': 'Thiếu thư viện openpyxl hoặc xlsxwriter để xuất file Excel'
+                }), 500
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

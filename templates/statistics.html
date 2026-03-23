@@ -158,15 +158,27 @@
                         <div class="d-flex justify-content-around text-center">
                             <div>
                                 <h4 class="text-info mb-0">{{ grand_total['1.2'] }}</h4>
-                                <small class="text-muted">1.2m</small>
+                                <small class="text-muted fw-bold">1.2m</small>
+                                <div class="text-muted" style="font-size: 0.7rem;">
+                                    <div>{{ "%.2f"|format(grand_total['1.2'] * 0.1404) }} m³</div>
+                                    <div>{{ "%.1f"|format(grand_total['1.2'] * 15.5) }} kg</div>
+                                </div>
                             </div>
                             <div>
                                 <h4 class="text-warning mb-0">{{ grand_total['1.6'] }}</h4>
-                                <small class="text-muted">1.6m</small>
+                                <small class="text-muted fw-bold">1.6m</small>
+                                <div class="text-muted" style="font-size: 0.7rem;">
+                                    <div>{{ "%.2f"|format(grand_total['1.6'] * 0.1872) }} m³</div>
+                                    <div>{{ "%.1f"|format(grand_total['1.6'] * 20.5) }} kg</div>
+                                </div>
                             </div>
                             <div>
                                 <h4 class="text-primary mb-0">{{ grand_total['1.9'] }}</h4>
-                                <small class="text-muted">1.9m</small>
+                                <small class="text-muted fw-bold">1.9m</small>
+                                <div class="text-muted" style="font-size: 0.7rem;">
+                                    <div>{{ "%.2f"|format(grand_total['1.9'] * 0.2223) }} m³</div>
+                                    <div>{{ "%.1f"|format(grand_total['1.9'] * 22) }} kg</div>
+                                </div>
                             </div>
                             <div>
                                 <h4 class="text-secondary mb-0">{{ grand_total['loose'] }}</h4>
@@ -197,6 +209,8 @@
                                 <th class="text-center text-secondary">Lẻ (Hộp)</th>
                                 <th class="text-center fw-bold bg-light">Tổng Pallet</th>
                                 <th class="text-center fw-bold bg-light">Tổng Thùng</th>
+                                <th class="text-center fw-bold text-info">CBM</th>
+                                <th class="text-center fw-bold text-warning">Kg</th>
                                 <th class="text-center text-danger">Chưa Scan</th>
                                 <th style="min-width: 150px;">Tiến độ</th>
                                 <th class="text-center">Xác nhận</th>
@@ -217,12 +231,38 @@
                                     {% endif %}
                                 </td>
                                 <td><span class="badge bg-light text-dark border">{{ job_type }}</span></td>
-                                <td class="text-center text-muted">{{ data['1.2'] }}</td>
-                                <td class="text-center text-muted">{{ data['1.6'] }}</td>
-                                <td class="text-center text-muted">{{ data['1.9'] }}</td>
+                                <td class="text-center">
+                                    <div class="text-muted fw-bold">{{ data['1.2'] }}</div>
+                                    {% if data['1.2'] > 0 %}
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
+                                        <div>{{ "%.2f"|format(data['1.2'] * 0.1404) }}m³</div>
+                                        <div>{{ "%.1f"|format(data['1.2'] * 15.5) }}kg</div>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <div class="text-muted fw-bold">{{ data['1.6'] }}</div>
+                                    {% if data['1.6'] > 0 %}
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
+                                        <div>{{ "%.2f"|format(data['1.6'] * 0.1872) }}m³</div>
+                                        <div>{{ "%.1f"|format(data['1.6'] * 20.5) }}kg</div>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <div class="text-muted fw-bold">{{ data['1.9'] }}</div>
+                                    {% if data['1.9'] > 0 %}
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
+                                        <div>{{ "%.2f"|format(data['1.9'] * 0.2223) }}m³</div>
+                                        <div>{{ "%.1f"|format(data['1.9'] * 22) }}kg</div>
+                                    </div>
+                                    {% endif %}
+                                </td>
                                 <td class="text-center text-muted">{{ data['loose'] }}</td>
                                 <td class="text-center fw-bold">{{ data['total'] }}</td>
                                 <td class="text-center fw-bold text-success">{{ scanned }}</td>
+                                <td class="text-center text-info">{{ "%.4f"|format(data['cbm']) }}</td>
+                                <td class="text-center text-warning">{{ "%.1f"|format(data['weight']) }}</td>
                                 <td class="text-center text-danger fw-bold">{{ remain }}</td>
                                 <td class="pe-4">
                                     <div class="d-flex align-items-center">
@@ -258,12 +298,32 @@
                         <tfoot class="table-light fw-bold">
                             <tr>
                                 <td colspan="2" class="ps-4 text-end text-uppercase">Tổng cộng:</td>
-                                <td class="text-center">{{ grand_total['1.2'] }}</td>
-                                <td class="text-center">{{ grand_total['1.6'] }}</td>
-                                <td class="text-center">{{ grand_total['1.9'] }}</td>
+                                <td class="text-center">
+                                    <div>{{ grand_total['1.2'] }}</div>
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
+                                        <div>{{ "%.2f"|format(grand_total['1.2'] * 0.1404) }}m³</div>
+                                        <div>{{ "%.1f"|format(grand_total['1.2'] * 15.5) }}kg</div>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <div>{{ grand_total['1.6'] }}</div>
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
+                                        <div>{{ "%.2f"|format(grand_total['1.6'] * 0.1872) }}m³</div>
+                                        <div>{{ "%.1f"|format(grand_total['1.6'] * 20.5) }}kg</div>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <div>{{ grand_total['1.9'] }}</div>
+                                    <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
+                                        <div>{{ "%.2f"|format(grand_total['1.9'] * 0.2223) }}m³</div>
+                                        <div>{{ "%.1f"|format(grand_total['1.9'] * 22) }}kg</div>
+                                    </div>
+                                </td>
                                 <td class="text-center">{{ grand_total['loose'] }}</td>
                                 <td class="text-center text-primary">{{ grand_total['total'] }}</td>
                                 <td class="text-center text-success">{{ grand_total['total_box'] }}</td>
+                                <td class="text-center text-info">{{ "%.4f"|format(grand_total['total_cbm']) }}</td>
+                                <td class="text-center text-warning">{{ "%.1f"|format(grand_total['total_weight']) }}</td>
                                 <td class="text-center"></td>
                                 <td></td>
                                 <td></td>
