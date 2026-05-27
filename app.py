@@ -1041,14 +1041,14 @@ def update_scan_sku_location():
 
     if carton <= 0:
         return jsonify({'success': False, 'message': 'Carton must be greater than 0'}), 400
-    if len(barcode) < 5:
-        return jsonify({'success': False, 'message': 'Barcode must have at least 5 characters'}), 400
+    if len(barcode) < 6:
+        return jsonify({'success': False, 'message': 'Barcode must have at least 6 characters'}), 400
 
     location = Location.query.get(loc_id)
     if not location:
         return jsonify({'success': False, 'message': 'Location not found'}), 404
 
-    refix_val = barcode[-5:]
+    refix_val = barcode[-6:-1]
     sku = _refix_cache.get(refix_val)
     if not sku:
         master_item = MasterData.query.filter_by(refix=refix_val).first()
