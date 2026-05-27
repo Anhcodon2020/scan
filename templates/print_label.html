@@ -118,9 +118,26 @@
             fetch('/api/get_print_data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ job_type: jobType })
             })
-            .then(response => response.json())
+            .then(async response => {
+                const contentType = response.headers.get('content-type') || '';
+                const payload = contentType.includes('application/json') ? await response.json() : null;
+
+                if (!response.ok) {
+                    const message = payload?.message || (response.status === 401
+                        ? 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại.'
+                        : `Máy chủ trả lỗi ${response.status}`);
+                    throw new Error(message);
+                }
+
+                if (!payload) {
+                    throw new Error('Máy chủ không trả dữ liệu JSON.');
+                }
+
+                return payload;
+            })
             .then(data => {
                 refreshBtn.disabled = false;
                 if (data.success) {
@@ -134,7 +151,7 @@
                 refreshBtn.disabled = false;
                 console.error(err);
                 if (!isSilent) {
-                    tableBody.innerHTML = '<tr><td colspan="9" class="text-danger py-3">Lỗi kết nối đến máy chủ</td></tr>';
+                    tableBody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">Lỗi JavaScript hoặc Máy chủ: ${err.message}</td></tr>`;
                 }
             });
         }
@@ -152,105 +169,116 @@
         }
 
         function renderTable(items) {
-            if (!items || items.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="9" class="text-muted py-3">Không tìm thấy dữ liệu pallet nào cho Job này.</td></tr>';
-                return;
-            }
-
-            // Sắp xếp items theo tag_label (has_small_label) để gom nhóm
-            items.sort((a, b) => {
-                const labelA = a.has_small_label ? 1 : 0;
-                const labelB = b.has_small_label ? 1 : 0;
-                return labelA - labelB;
-            });
-
-            let html = '';
-            let currentGroup = null;
-
-            items.forEach((item, index) => {
-                const originalIndex = currentData.indexOf(item);
-
-                // Xác định nhóm và hiển thị header nếu thay đổi
-                const groupName = item.has_small_label ? 'Tem Nhỏ' : 'Tem Thường';
-                if (groupName !== currentGroup) {
-                    currentGroup = groupName;
-                    html += `<tr class="table-light"><td colspan="9" class="text-start fw-bold text-primary ps-4"><i class="bi bi-tags"></i> ${groupName}</td></tr>`;
+            try {
+                if (!items || items.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="9" class="text-muted py-3">Không tìm thấy dữ liệu pallet nào cho Job này.</td></tr>';
+                    return;
                 }
 
-                // Tính tổng trọng lượng từ danh sách SKU trong pallet
-                let totalWeight = 0;
-                if (item.skus) {
-                    item.skus.forEach(s => {
-                        // s.qty là số lượng thùng, s.sku_weight là trọng lượng 1 thùng
-                        totalWeight += (s.qty * (s.sku_weight || 0));
-                    });
-                }
+                // Sắp xếp items theo tag_label (has_small_label) để gom nhóm
+                items.sort((a, b) => {
+                    const labelA = a.has_small_label ? 1 : 0;
+                    const labelB = b.has_small_label ? 1 : 0;
+                    if (labelA !== labelB) {
+                        return labelA - labelB; // Ưu tiên nhóm theo loại tem
+                    }
+                    // Nếu cùng nhóm, sắp xếp theo số pallet (chuyển đổi sang số để so sánh đúng)
+                    const numA = parseInt(a.pallet_no, 10) || 0;
+                    const numB = parseInt(b.pallet_no, 10) || 0;
+                    return numA - numB;
+                });
 
-                // Xác định trạng thái in
-                const statusBadge = item.jobscan 
-                    ? '<span class="badge bg-success">Đã in</span>' 
-                    : '<span class="badge bg-warning text-dark">Chờ in</span>';
+                let html = '';
+                let currentGroup = null;
 
-                const note = item.has_small_label ? '<span class="badge bg-info text-dark">Tem nhỏ</span>' : '';
+                items.forEach((item, index) => {
+                    const originalIndex = currentData.indexOf(item);
 
-                let actionHtml = '';
-                if (item.is_completed) {
-                    const btnSSCC = !item.has_small_label ? `
-                        <button class="btn btn-outline-dark btn-sm ms-1" onclick="printSSCCLabel(${originalIndex}, this)">
-                            <i class="bi bi-upc-scan"></i> SSCC
-                        </button>
-                    ` : '';
+                    // Xác định nhóm và hiển thị header nếu thay đổi
+                    const groupName = item.has_small_label ? 'Tem Nhỏ' : 'Tem Thường';
+                    if (groupName !== currentGroup) {
+                        currentGroup = groupName;
+                        html += `<tr class="table-light"><td colspan="9" class="text-start fw-bold text-primary ps-4"><i class="bi bi-tags"></i> ${groupName}</td></tr>`;
+                    }
 
-                    const btnSmallLabel = item.has_small_label ? `
-                        <button class="btn btn-warning btn-sm ms-1" onclick="printSmallLabel(${originalIndex}, this)">
-                            <i class="bi bi-tag"></i> Tem Nhỏ
-                        </button>
-                    ` : '';
+                    // Tính tổng trọng lượng từ danh sách SKU trong pallet
+                    let totalWeight = 0;
+                    if (item.skus) {
+                        item.skus.forEach(s => {
+                            // s.qty là số lượng thùng, s.sku_weight là trọng lượng 1 thùng
+                            totalWeight += (s.qty * (s.sku_weight || 0));
+                        });
+                    }
 
-                    let btnUnlock = '';
-                    if (userRole === 'admin') {
-                        btnUnlock = `
-                            <button class="btn btn-danger btn-sm ms-1" onclick="unlockPallet(${originalIndex})">
-                                <i class="bi bi-unlock-fill"></i> Mở khóa
+                    // Xác định trạng thái in
+                    const statusBadge = item.jobscan 
+                        ? '<span class="badge bg-success">Đã in</span>' 
+                        : '<span class="badge bg-warning text-dark">Chờ in</span>';
+
+                    const note = item.has_small_label ? '<span class="badge bg-info text-dark">Tem nhỏ</span>' : '';
+
+                    let actionHtml = '';
+                    if (item.is_completed) {
+                        const btnSSCC = !item.has_small_label ? `
+                            <button class="btn btn-outline-dark btn-sm ms-1" onclick="printSSCCLabel(${originalIndex}, this)">
+                                <i class="bi bi-upc-scan"></i> SSCC
                             </button>
+                        ` : '';
+
+                        const btnSmallLabel = item.has_small_label ? `
+                            <button class="btn btn-warning btn-sm ms-1" onclick="printSmallLabel(${originalIndex}, this)">
+                                <i class="bi bi-tag"></i> Tem Nhỏ
+                            </button>
+                        ` : '';
+
+                        let btnUnlock = '';
+                        if (userRole === 'admin') {
+                            btnUnlock = `
+                                <button class="btn btn-danger btn-sm ms-1" onclick="unlockPallet(${originalIndex})">
+                                    <i class="bi bi-unlock-fill"></i> Mở khóa
+                                </button>
+                            `;
+                        }
+
+                        actionHtml = `
+                            <button class="btn btn-primary btn-sm" onclick="printLabel(${originalIndex})">
+                                <i class="bi bi-printer"></i> In Tem
+                            </button>
+                            ${btnSSCC}
+                            ${btnSmallLabel}
+                            ${btnUnlock}
                         `;
-                    }
-
-                    actionHtml = `
-                        <button class="btn btn-primary btn-sm" onclick="printLabel(${originalIndex})">
-                            <i class="bi bi-printer"></i> In Tem
-                        </button>
-                        ${btnSSCC}
-                        ${btnSmallLabel}
-                        ${btnUnlock}
-                    `;
-                } else {
-                    if (userRole === 'admin' || userRole === 'printer') {
-                        actionHtml = `<button class="btn btn-danger btn-sm" onclick="forceFinishPallet(${originalIndex})">
-                                        <i class="bi bi-lock-fill"></i> Khóa
-                                      </button>`;
                     } else {
-                        actionHtml = `<span class="text-warning fw-bold"><i class="bi bi-lock-fill"></i> Đang scan...</span>`;
+                        if (userRole === 'admin' || userRole === 'printer') {
+                            actionHtml = `<button class="btn btn-danger btn-sm" onclick="forceFinishPallet(${originalIndex})">
+                                            <i class="bi bi-lock-fill"></i> Khóa
+                                          </button>`;
+                        } else {
+                            actionHtml = `<span class="text-warning fw-bold"><i class="bi bi-lock-fill"></i> Đang scan...</span>`;
+                        }
                     }
-                }
 
-                html += `
-                    <tr>
-                        <td>${index + 1}</td>
-                        <td class="fw-bold text-primary">${item.pallet_no}</td>
-                        <td>${item.pallet_type || '-'}</td>
-                        <td>${item.jobscan || ''}</td>
-                        <td class="fw-bold">${item.qty}</td>
-                        <td>${totalWeight.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        <td>${note}</td>
-                        <td>${statusBadge}</td>
-                        <td>
-                            ${actionHtml}
-                        </td>
-                    </tr>
-                `;
-            });
-            tableBody.innerHTML = html;
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td class="fw-bold text-primary">${item.pallet_no}</td>
+                            <td>${item.pallet_type || '-'}</td>
+                            <td>${item.jobscan || ''}</td>
+                            <td class="fw-bold">${item.qty}</td>
+                            <td>${totalWeight.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td>${note}</td>
+                            <td>${statusBadge}</td>
+                            <td>
+                                ${actionHtml}
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableBody.innerHTML = html;
+            } catch (error) {
+                console.error("Lỗi khi render bảng:", error);
+                tableBody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">Đã xảy ra lỗi hiển thị: ${error.message}</td></tr>`;
+            }
         }
 
         function forceFinishPallet(index) {
@@ -408,6 +436,11 @@
                         margin: 10
                     });
                     barcodeImg = canvas.toDataURL("image/png");
+                    
+                    // Bỏ qua nếu bị tiện ích mở rộng (Canvas Blocker) chặn và trả về URL lỗi
+                    if (barcodeImg && !barcodeImg.startsWith("data:image/")) {
+                        barcodeImg = ''; // Đưa về chuỗi rỗng để hiển thị Text thay vì hiển thị ảnh lỗi
+                    }
                 } catch (e) {
                     console.error("Lỗi tạo barcode:", e);
                 }
@@ -438,41 +471,17 @@
                     <tr>
                         <th>STT</th>
                         <th>SKU</th>
-                        <th>Số lượng (Thùng)</th>
-                        <th> Số kg trong 1 thùng(Kg)</th>
-                        <th>Tổng trọng lượng(Kg)</th>
+                        <th>SL<br>(Thùng)</th>
+                        <th>Kg/thùng</th>
+                        <th>Tổng<br>(Kg)</th>
                         <th>Ghi chú</th>
                     </tr>
                 </thead>
             `;
 
-            const htmlContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Print Label - ${item.pallet_no}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
-                        .header { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; position: relative; }
-                        .header-right { position: absolute; top: 0; right: 0; font-size: 14px; font-weight: normal; text-align: right; }
-                        .info-row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 16px; }
-                        .info-row strong { font-size: 18px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; }
-                        th, td { border: 1px solid #000; padding: 10px; text-align: center; }
-                        th { background-color: #f2f2f2; }
-                        .footer { margin-top: 30px; font-size: 16px; border-top: 2px solid #333; padding-top: 20px; }
-                        .footer-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-                        .gross-weight { font-size: 20px; font-weight: bold; margin-top: 15px; }
-                        .barcode-container { text-align: center; margin-top: 40px; }
-                        img { max-width: 100%; height: auto; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        PALLET LABEL
-                        
-                    </div>
-                    
+            const labelPartHtml = `
+                <div class="label-part">
+                    <div class="header">PALLET LABEL</div>
                     <div class="info-row">
                         <span>Job No: <strong>${jobSelect.value}</strong></span>
                         <span>Date: ${new Date().toLocaleDateString('en-GB')}</span>
@@ -481,43 +490,82 @@
                         <span>Pallet No: <strong>${item.pallet_no}</strong></span>
                         <span>Type: ${item.pallet_type || 'N/A'}</span>
                     </div>
-
                     <table>
                         ${tableHeader}
-                        <tbody>
-                            ${skuRows}
-                        </tbody>
+                        <tbody>${skuRows}</tbody>
                     </table>
-
                     <div class="footer">
-                        <div class="footer-row">
-                            <span>Total Quantity (Box):</span>
-                            <strong>${item.qty}</strong>
-                        </div>
-                        <div class="footer-row">
-                            <span>Net Weight:</span>
-                            <strong>${netWeight.toFixed(2)} Kg</strong>
-                        </div>
-                        <div class="footer-row">
-                            <span>Pallet Weight (Tare):</span>
-                            <strong>${palletTare} Kg</strong>
-                        </div>
-                        <div class="footer-row gross-weight">
-                            <span>GROSS WEIGHT:</span>
-                            <span>${grossWeight.toFixed(2)} Kg</span>
-                        </div>
+                        <div class="footer-row"><span>Total Quantity (Box):</span><strong>${item.qty}</strong></div>
+                        <div class="footer-row"><span>Net Weight:</span><strong>${netWeight.toFixed(2)} Kg</strong></div>
+                        <div class="footer-row"><span>Pallet Weight (Tare):</span><strong>${palletTare} Kg</strong></div>
+                        <div class="footer-row gross-weight"><span>GROSS WEIGHT:</span><span>${grossWeight.toFixed(2)} Kg</span></div>
                     </div>
-
                     <div class="barcode-container">
-                        ${barcodeImg ? `<img src="${barcodeImg}" />` : ''}
-                        ${!barcodeImg && jobScanToPrint ? `<div>Job Scan: ${jobScanToPrint}</div>` : ''}
+                        ${barcodeImg ? '<img src="' + barcodeImg + '" />' : ''}
+                        ${!barcodeImg && jobScanToPrint ? '<div>Job Scan: ' + jobScanToPrint + '</div>' : ''}
+                    </div>
+                </div>
+            `;
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Print Label - ${item.pallet_no}</title>
+                    <style>
+                        @page { size: A4 portrait; margin: 8mm; }
+                        html, body {
+                            width: 210mm;
+                            min-height: 297mm;
+                        }
+                        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: white; }
+                        .page-container {
+                            width: 100%;
+                            min-height: 281mm;
+                            box-sizing: border-box;
+                        }
+                        .label-part {
+                            width: 100%;
+                            min-height: 281mm;
+                            padding: 14px;
+                            box-sizing: border-box;
+                            border: 1px dashed #ccc;
+                            display: flex;
+                            flex-direction: column;
+                        }
+                        .header { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 18px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+                        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 16px; }
+                        .info-row strong { font-size: 18px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 14px; margin-bottom: 14px; font-size: 14px; }
+                        th, td { border: 1px solid #000; padding: 8px; text-align: center; word-break: break-word; }
+                        th { background-color: #f2f2f2; }
+                        .footer { margin-top: 20px; font-size: 16px; border-top: 2px solid #333; padding-top: 14px; }
+                        .footer-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+                        .gross-weight { font-size: 20px; font-weight: bold; margin-top: 12px; }
+                        .barcode-container { text-align: center; margin-top: auto; padding-top: 16px; }
+                        img { max-width: 70%; height: auto; }
+                        @media print {
+                            html, body {
+                                width: 210mm;
+                                min-height: 297mm;
+                            }
+                            .page-container,
+                            .label-part {
+                                min-height: 281mm;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="page-container">
+                        ${labelPartHtml}
                     </div>
 
                     <script>
                         window.onload = function() {
                             window.print();
                         }
-                    <\/script>
+                    \x3C/script>
                 </body>
                 </html>
             `;
@@ -703,7 +751,7 @@
                 <html>
                 <head>
                     <title>SSCC Label - ${palletInfo.pallet_no}</title>
-                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js">${'<'}/script>
                     <style>
                         @page { size: 100mm 150mm; margin: 0; }
                         body { margin: 0; font-family: Arial, sans-serif; background: #ccc; }
@@ -747,7 +795,7 @@
                                 window.print();
                             }, 500);
                         }
-                    <\/script>
+                    \x3C/script>
                 </body>
                 </html>
             `;
@@ -795,7 +843,7 @@
                 <html>
                 <head>
                     <title>Small Labels - ${palletInfo.pallet_no}</title>
-                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js">${'<'}/script>
                     <style>
                         @page { size: 100mm 30mm; margin: 0; }
                         body { margin: 0; font-family: Arial, sans-serif; background: #ccc; }
@@ -832,7 +880,7 @@
                                 window.print();
                             }, 500);
                         }
-                    <\/script>
+                    \x3C/script>
                 </body>
                 </html>
             `;
@@ -858,9 +906,17 @@
         const toastContainer = document.getElementById('toastContainer');
         const notificationBadge = document.getElementById('notification-badge');
 
+        async function parseJsonResponse(response) {
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error(`Máy chủ trả về ${response.status}, không phải JSON.`);
+            }
+            return response.json();
+        }
+
         function fetchLogs() {
-            fetch('/api/get_logs')
-                .then(response => response.json())
+            fetch('/api/get_logs', { credentials: 'same-origin' })
+                .then(parseJsonResponse)
                 .then(data => {
                     if (data.success && data.logs) {
                         data.logs.forEach(log => {
@@ -903,13 +959,14 @@
             fetch('/api/mark_read', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ id: id })
             }).catch(console.error);
         }
 
         function updateNotificationBadge() {
-            fetch('/api/unread_count')
-                .then(response => response.json())
+            fetch('/api/unread_count', { credentials: 'same-origin' })
+                .then(parseJsonResponse)
                 .then(data => {
                     if (data.success && data.count > 0) {
                         notificationBadge.textContent = data.count > 99 ? '99+' : data.count;

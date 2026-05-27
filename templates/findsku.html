@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find SKU</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+        .btn-back { display: inline-block; text-decoration: none; color: #666; font-size: 16px; }
+        .user-box { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        .search-row { display: grid; grid-template-columns: 1fr 160px; gap: 12px; margin-top: 20px; align-items: end; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 700; color: #333; }
+        .form-group input { width: 100%; padding: 13px; box-sizing: border-box; border: 1px solid #bbb; border-radius: 4px; font-size: 20px; font-weight: 700; }
+        .btn { padding: 13px 18px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 16px; }
+        .btn-search { background-color: #0d6efd; width: 100%; }
+        .btn-search:disabled { background-color: #8bb8fb; cursor: wait; }
+        .status { margin-top: 18px; padding: 12px; border-radius: 4px; font-weight: 700; display: none; }
+        .status.info { display: block; background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+        .status.error { display: block; background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+        .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+        .summary-box { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; min-height: 58px; }
+        .summary-box span { display: block; color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .summary-box strong { display: block; margin-top: 6px; font-size: 20px; color: #222; word-break: break-word; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 700; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        @media (max-width: 760px) {
+            .search-row { grid-template-columns: 1fr; }
+            .summary { grid-template-columns: 1fr; }
+            .table-wrap { overflow-x: auto; }
+            table { min-width: 760px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a href="/" class="btn-back">&larr; Quay l&#7841;i Menu</a>
+            <div class="user-box">
+                <span style="font-weight: 600; color: #333;">Xin ch&agrave;o, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="color: #dc3545; font-weight: bold;">&#272;&#259;ng xu&#7845;t</a>
+            </div>
+        </div>
+
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Find SKU</h2>
+
+        <div class="search-row">
+            <div class="form-group">
+                <label>SKU</label>
+                <input type="text" id="skuInput" autocomplete="off" placeholder="Nhap SKU can tim">
+            </div>
+            <button id="btnSearch" class="btn btn-search" onclick="searchSku()">T&igrave;m SKU</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="summary">
+            <div class="summary-box"><span>SKU</span><strong id="summarySku">-</strong></div>
+            <div class="summary-box"><span>Locations</span><strong id="summaryLocations">0</strong></div>
+            <div class="summary-box"><span>Total Carton</span><strong id="summaryCarton">0</strong></div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 160px;">Location</th>
+                        <th>Description</th>
+                        <th style="width: 180px;">SKU</th>
+                        <th style="width: 90px; text-align: right;">Pallet</th>
+                        <th style="width: 100px; text-align: right;">Carton</th>
+                        <th style="width: 170px;">Time Update</th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody">
+                    <tr><td colspan="6" style="text-align: center;">Nhap SKU de tim location</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const skuInput = document.getElementById('skuInput');
+        const btnSearch = document.getElementById('btnSearch');
+        const statusBox = document.getElementById('status');
+        const resultBody = document.getElementById('resultBody');
+
+        function showStatus(type, message) {
+            statusBox.className = 'status ' + type;
+            statusBox.textContent = message;
+        }
+
+        function clearStatus() {
+            statusBox.className = 'status';
+            statusBox.textContent = '';
+        }
+
+        function setEmptyRow(message) {
+            resultBody.innerHTML = `<tr><td colspan="6" style="text-align: center;">${message}</td></tr>`;
+        }
+
+        function searchSku() {
+            const sku = skuInput.value.trim();
+            if (!sku) {
+                showStatus('error', 'Vui long nhap SKU');
+                skuInput.focus();
+                return;
+            }
+
+            btnSearch.disabled = true;
+            clearStatus();
+
+            fetch('/api/findsku/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sku})
+            }).then(r => r.json()).then(data => {
+                if (!data.success) {
+                    showStatus('error', data.message || 'Khong tim duoc SKU');
+                    setEmptyRow('Khong co du lieu');
+                    return;
+                }
+
+                document.getElementById('summarySku').textContent = data.sku;
+                document.getElementById('summaryLocations').textContent = data.results.length;
+                document.getElementById('summaryCarton').textContent = data.total_carton;
+
+                if (data.results.length === 0) {
+                    showStatus('info', 'SKU nay chua co trong Inventory WHS');
+                    setEmptyRow('Khong tim thay location nao');
+                    return;
+                }
+
+                clearStatus();
+                resultBody.innerHTML = '';
+                data.results.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${item.location_code || '-'}</strong></td>
+                        <td>${item.location_description || '-'}</td>
+                        <td>${item.sku}</td>
+                        <td style="text-align: right;">${item.pallet}</td>
+                        <td style="text-align: right; font-weight: 700;">${item.carton}</td>
+                        <td>${item.time_update || '-'}</td>
+                    `;
+                    resultBody.appendChild(row);
+                });
+            }).catch(() => {
+                showStatus('error', 'Khong ket noi duoc server');
+                setEmptyRow('Khong co du lieu');
+            }).finally(() => {
+                btnSearch.disabled = false;
+                skuInput.focus();
+                skuInput.select();
+            });
+        }
+
+        skuInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchSku();
+            }
+        });
+
+        skuInput.focus();
+    </script>
+</body>
+</html>

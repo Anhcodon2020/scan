@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory WHS</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+        .btn-back { display: inline-block; text-decoration: none; color: #666; font-size: 16px; }
+        .user-box { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
+        .btn-add { background-color: #28a745; margin-bottom: 15px; font-size: 16px; padding: 10px 20px; }
+        .btn-edit { background-color: #ffc107; color: #333; margin-right: 5px; }
+        .btn-delete { background-color: #dc3545; }
+        .btn:hover { opacity: 0.9; }
+        .readonly-note { background: #eef6ff; border-left: 4px solid #0d6efd; color: #1f4f82; padding: 10px 12px; border-radius: 4px; margin-bottom: 15px; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 7% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
+        .close:hover { color: #000; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        @media (max-width: 760px) {
+            .table-wrap { overflow-x: auto; }
+            table { min-width: 820px; }
+            th, td { padding: 9px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a href="/" class="btn-back">&larr; Quay l&#7841;i Menu</a>
+            <div class="user-box">
+                <span style="font-weight: 600; color: #333;">Xin ch&agrave;o, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="color: #dc3545; font-weight: bold;">&#272;&#259;ng xu&#7845;t</a>
+            </div>
+        </div>
+
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Inventory WHS</h2>
+
+        {% if session.get('role') in ['admin', 'scanner'] %}
+        <button class="btn btn-add" onclick="openModal()">+ Th&ecirc;m Inventory</button>
+        {% else %}
+        <div class="readonly-note">T&agrave;i kho&#7843;n c&#7911;a b&#7841;n ch&#7881; c&oacute; quy&#7873;n xem Inventory WHS.</div>
+        {% endif %}
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">ID</th>
+                        <th style="width: 160px;">Location</th>
+                        <th>Description</th>
+                        <th style="width: 180px;">SKU</th>
+                        <th style="width: 90px; text-align: right;">Pallet</th>
+                        <th style="width: 90px; text-align: right;">Carton</th>
+                        <th style="width: 160px;">Time Update</th>
+                        {% if session.get('role') in ['admin', 'scanner'] %}
+                        <th style="width: 150px; text-align: center;">H&agrave;nh &#273;&#7897;ng</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                    <tr><td colspan="{{ 8 if session.get('role') in ['admin', 'scanner'] else 7 }}" style="text-align: center;">&#272;ang t&#7843;i d&#7919; li&#7879;u...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if session.get('role') in ['admin', 'scanner'] %}
+    <div id="inventoryModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin-top: 0;">Th&ecirc;m Inventory</h3>
+            <input type="hidden" id="inventoryId">
+
+            <div class="form-group">
+                <label>Location <span style="color:red">*</span></label>
+                <select id="locId"></select>
+            </div>
+
+            <div class="form-group">
+                <label>SKU <span style="color:red">*</span></label>
+                <input type="text" id="sku" maxlength="100" placeholder="Nhap SKU">
+            </div>
+
+            <div class="form-group">
+                <label>Pallet</label>
+                <input type="number" id="pallet" min="0" step="1" value="0">
+            </div>
+
+            <div class="form-group">
+                <label>Carton</label>
+                <input type="number" id="carton" min="0" step="1" value="0">
+            </div>
+
+            <button class="btn btn-add" style="width: 100%; margin-bottom: 0;" onclick="saveInventory()">L&#432;u th&ocirc;ng tin</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        const canEdit = ["admin", "scanner"].includes("{{ session.get('role') }}");
+        const modal = document.getElementById('inventoryModal');
+        let locationOptions = [];
+
+        function setTextCell(row, value, alignRight = false) {
+            const cell = document.createElement('td');
+            cell.textContent = value === null || value === undefined || value === '' ? '-' : value;
+            if (alignRight) cell.style.textAlign = 'right';
+            row.appendChild(cell);
+            return cell;
+        }
+
+        function renderLocationOptions() {
+            if (!canEdit) return;
+            const select = document.getElementById('locId');
+            select.innerHTML = '';
+            locationOptions.forEach(loc => {
+                const option = document.createElement('option');
+                option.value = loc.id;
+                option.textContent = loc.description ? `${loc.loc_id} - ${loc.description}` : loc.loc_id;
+                select.appendChild(option);
+            });
+        }
+
+        function loadInventory() {
+            fetch('/api/invetory_whs/list')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('inventoryTableBody');
+                    tbody.innerHTML = '';
+
+                    if (!data.success) {
+                        const row = document.createElement('tr');
+                        const cell = setTextCell(row, data.message || 'Khong tai duoc du lieu');
+                        cell.colSpan = canEdit ? 8 : 7;
+                        cell.style.textAlign = 'center';
+                        tbody.appendChild(row);
+                        return;
+                    }
+
+                    locationOptions = data.locations || [];
+                    renderLocationOptions();
+
+                    if (data.items.length === 0) {
+                        const row = document.createElement('tr');
+                        const cell = setTextCell(row, 'Chua co du lieu');
+                        cell.colSpan = canEdit ? 8 : 7;
+                        cell.style.textAlign = 'center';
+                        tbody.appendChild(row);
+                        return;
+                    }
+
+                    data.items.forEach(item => {
+                        const row = document.createElement('tr');
+                        setTextCell(row, item.id);
+                        const locCell = setTextCell(row, item.location_code);
+                        locCell.style.fontWeight = '700';
+                        setTextCell(row, item.location_description);
+                        setTextCell(row, item.sku);
+                        setTextCell(row, item.pallet, true);
+                        setTextCell(row, item.carton, true);
+                        setTextCell(row, item.time_update);
+
+                        if (canEdit) {
+                            const actionCell = document.createElement('td');
+                            actionCell.style.textAlign = 'center';
+
+                            const editBtn = document.createElement('button');
+                            editBtn.className = 'btn btn-edit';
+                            editBtn.textContent = 'Sua';
+                            editBtn.onclick = () => editInventory(item);
+
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'btn btn-delete';
+                            deleteBtn.textContent = 'Xoa';
+                            deleteBtn.onclick = () => deleteInventory(item.id, item.sku);
+
+                            actionCell.appendChild(editBtn);
+                            actionCell.appendChild(deleteBtn);
+                            row.appendChild(actionCell);
+                        }
+
+                        tbody.appendChild(row);
+                    });
+                });
+        }
+
+        function openModal() {
+            if (!canEdit) return;
+            if (locationOptions.length === 0) {
+                alert('Chua co location. Vui long tao location truoc.');
+                return;
+            }
+            document.getElementById('inventoryId').value = '';
+            document.getElementById('locId').value = locationOptions[0].id;
+            document.getElementById('sku').value = '';
+            document.getElementById('pallet').value = '0';
+            document.getElementById('carton').value = '0';
+            document.getElementById('modalTitle').innerText = 'Them Inventory';
+            modal.style.display = 'block';
+        }
+
+        function editInventory(item) {
+            if (!canEdit) return;
+            document.getElementById('inventoryId').value = item.id;
+            document.getElementById('locId').value = item.loc_id;
+            document.getElementById('sku').value = item.sku || '';
+            document.getElementById('pallet').value = item.pallet || 0;
+            document.getElementById('carton').value = item.carton || 0;
+            document.getElementById('modalTitle').innerText = 'Sua Inventory';
+            modal.style.display = 'block';
+        }
+
+        function closeModal() {
+            if (modal) modal.style.display = 'none';
+        }
+
+        window.onclick = function(e) {
+            if (modal && e.target === modal) closeModal();
+        };
+
+        function saveInventory() {
+            if (!canEdit) return;
+            const id = document.getElementById('inventoryId').value;
+            const loc_id = document.getElementById('locId').value;
+            const sku = document.getElementById('sku').value.trim();
+            const pallet = document.getElementById('pallet').value;
+            const carton = document.getElementById('carton').value;
+
+            if (!loc_id) {
+                alert('Vui long chon Location');
+                return;
+            }
+            if (!sku) {
+                alert('Vui long nhap SKU');
+                return;
+            }
+
+            fetch('/api/invetory_whs/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, loc_id, sku, pallet, carton})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    closeModal();
+                    loadInventory();
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+
+        function deleteInventory(id, sku) {
+            if (!canEdit) return;
+            if (confirm('Ban co chac muon xoa SKU: ' + sku + '?')) {
+                fetch('/api/invetory_whs/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id})
+                }).then(r => r.json()).then(data => {
+                    if (data.success) loadInventory();
+                    else alert(data.message);
+                });
+            }
+        }
+
+        loadInventory();
+    </script>
+</body>
+</html>

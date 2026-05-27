@@ -6,3 +6,5 @@ from .log import Log
 from .load import Load
 from .inbound import Inbound
 from .labor_assignment import LaborAssignment
+from .location import Location
+from .invetory_whs import InventoryWhs

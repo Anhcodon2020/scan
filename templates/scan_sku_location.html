@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan SKU vao Location</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+        .btn-back { display: inline-block; text-decoration: none; color: #666; font-size: 16px; }
+        .user-box { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        .scan-panel { display: grid; grid-template-columns: 1fr 160px; gap: 15px; align-items: end; margin-top: 20px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 700; color: #333; }
+        .form-group input, .form-group select { width: 100%; padding: 13px; box-sizing: border-box; border: 1px solid #bbb; border-radius: 4px; font-size: 18px; }
+        .barcode-input { font-size: 24px !important; font-weight: 700; letter-spacing: 0; }
+        .btn { padding: 13px 18px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 16px; }
+        .btn-update { background-color: #198754; width: 100%; }
+        .btn-update:disabled { background-color: #8abca3; cursor: wait; }
+        .status { margin-top: 18px; padding: 14px; border-radius: 4px; font-weight: 700; display: none; }
+        .status.success { display: block; background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+        .status.error { display: block; background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 20px; }
+        .summary-box { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; min-height: 58px; }
+        .summary-box span { display: block; color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .summary-box strong { display: block; margin-top: 6px; font-size: 18px; color: #222; word-break: break-word; }
+        .history { margin-top: 22px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 700; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        @media (max-width: 760px) {
+            .scan-panel { grid-template-columns: 1fr; }
+            .summary { grid-template-columns: 1fr 1fr; }
+            .table-wrap { overflow-x: auto; }
+            table { min-width: 720px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a href="/" class="btn-back">&larr; Quay l&#7841;i Menu</a>
+            <div class="user-box">
+                <span style="font-weight: 600; color: #333;">Xin ch&agrave;o, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="color: #dc3545; font-weight: bold;">&#272;&#259;ng xu&#7845;t</a>
+            </div>
+        </div>
+
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Scan SKU v&agrave;o Location</h2>
+
+        <div class="form-group">
+            <label>Ch&#7885;n Location</label>
+            <select id="locId"></select>
+        </div>
+
+        <div class="scan-panel">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Barcode</label>
+                <input class="barcode-input" type="text" id="barcode" autocomplete="off" inputmode="none" placeholder="Scan barcode bang Zebra">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Carton</label>
+                <input type="number" id="carton" min="1" step="1" value="1">
+            </div>
+        </div>
+
+        <button id="btnUpdate" class="btn btn-update" style="margin-top: 15px;" onclick="updateInventory()">C&#7853;p nh&#7853;t v&agrave;o Inventory WHS</button>
+
+        <div id="status" class="status"></div>
+
+        <div class="summary">
+            <div class="summary-box"><span>SKU</span><strong id="lastSku">-</strong></div>
+            <div class="summary-box"><span>Refix</span><strong id="lastRefix">-</strong></div>
+            <div class="summary-box"><span>Location</span><strong id="lastLocation">-</strong></div>
+            <div class="summary-box"><span>Total Carton</span><strong id="lastTotal">-</strong></div>
+        </div>
+
+        <div class="history">
+            <h3 style="margin-bottom: 0;">L&#7883;ch s&#7917; scan</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Location</th>
+                            <th>SKU</th>
+                            <th>Refix</th>
+                            <th style="text-align: right;">+ Carton</th>
+                            <th style="text-align: right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="6" style="text-align: center;">Chua co du lieu scan</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const locSelect = document.getElementById('locId');
+        const barcodeInput = document.getElementById('barcode');
+        const cartonInput = document.getElementById('carton');
+        const btnUpdate = document.getElementById('btnUpdate');
+        const statusBox = document.getElementById('status');
+        const historyBody = document.getElementById('historyBody');
+        let scanCount = 0;
+
+        function showStatus(type, message) {
+            statusBox.className = 'status ' + type;
+            statusBox.textContent = message;
+        }
+
+        function focusBarcode() {
+            setTimeout(() => barcodeInput.focus(), 50);
+        }
+
+        function loadOptions() {
+            fetch('/api/scan_sku_location/options')
+                .then(r => r.json())
+                .then(data => {
+                    locSelect.innerHTML = '';
+                    if (!data.success) {
+                        showStatus('error', data.message || 'Khong tai duoc location');
+                        return;
+                    }
+                    if (data.locations.length === 0) {
+                        showStatus('error', 'Chua co location. Vui long tao location truoc.');
+                        return;
+                    }
+                    data.locations.forEach(loc => {
+                        const option = document.createElement('option');
+                        option.value = loc.id;
+                        option.textContent = loc.description ? `${loc.loc_id} - ${loc.description}` : loc.loc_id;
+                        locSelect.appendChild(option);
+                    });
+                    focusBarcode();
+                });
+        }
+
+        function addHistory(item) {
+            if (scanCount === 0) historyBody.innerHTML = '';
+            scanCount += 1;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${item.time_update}</td>
+                <td>${item.loc_id}</td>
+                <td><strong>${item.sku}</strong></td>
+                <td>${item.refix}</td>
+                <td style="text-align: right;">${item.carton_added}</td>
+                <td style="text-align: right; font-weight: 700;">${item.carton_total}</td>
+            `;
+            historyBody.insertBefore(row, historyBody.firstChild);
+        }
+
+        function updateInventory() {
+            const loc_id = locSelect.value;
+            const barcode = barcodeInput.value.trim();
+            const carton = cartonInput.value;
+
+            if (!loc_id) {
+                showStatus('error', 'Vui long chon Location');
+                focusBarcode();
+                return;
+            }
+            if (!barcode) {
+                showStatus('error', 'Vui long scan barcode');
+                focusBarcode();
+                return;
+            }
+
+            btnUpdate.disabled = true;
+            fetch('/api/scan_sku_location/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({loc_id, barcode, carton})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    document.getElementById('lastSku').textContent = data.sku;
+                    document.getElementById('lastRefix').textContent = data.refix;
+                    document.getElementById('lastLocation').textContent = data.loc_id;
+                    document.getElementById('lastTotal').textContent = data.carton_total;
+                    showStatus('success', `Da cap nhat SKU ${data.sku}: +${data.carton_added} carton, tong ${data.carton_total}`);
+                    addHistory(data);
+                    barcodeInput.value = '';
+                } else {
+                    showStatus('error', data.message || 'Cap nhat that bai');
+                    barcodeInput.select();
+                }
+            }).catch(() => {
+                showStatus('error', 'Khong ket noi duoc server');
+            }).finally(() => {
+                btnUpdate.disabled = false;
+                focusBarcode();
+            });
+        }
+
+        barcodeInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                updateInventory();
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!['SELECT', 'INPUT', 'BUTTON', 'A'].includes(e.target.tagName)) {
+                focusBarcode();
+            }
+        });
+
+        loadOptions();
+    </script>
+</body>
+</html>

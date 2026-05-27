@@ -197,6 +197,22 @@
         .card-outbound { border-color: #0d6efd; }
         .card-outbound .card-icon { color: #0d6efd; background-color: rgba(13, 110, 253, 0.1); }
         .card-outbound:hover .card-icon { background-color: #0d6efd; color: white; }
+
+        .card-location { border-color: #198754; }
+        .card-location .card-icon { color: #198754; background-color: rgba(25, 135, 84, 0.1); }
+        .card-location:hover .card-icon { background-color: #198754; color: white; }
+
+        .card-inventory { border-color: #6610f2; }
+        .card-inventory .card-icon { color: #6610f2; background-color: rgba(102, 16, 242, 0.1); }
+        .card-inventory:hover .card-icon { background-color: #6610f2; color: white; }
+
+        .card-sku-location { border-color: #0f766e; }
+        .card-sku-location .card-icon { color: #0f766e; background-color: rgba(15, 118, 110, 0.1); }
+        .card-sku-location:hover .card-icon { background-color: #0f766e; color: white; }
+
+        .card-findsku { border-color: #0d9488; }
+        .card-findsku .card-icon { color: #0d9488; background-color: rgba(13, 148, 136, 0.1); }
+        .card-findsku:hover .card-icon { background-color: #0d9488; color: white; }
         
         footer {
             text-align: center;
@@ -237,6 +253,18 @@
 
             <!-- Chức năng Thống kê: Dành cho admin, printer, Docs và scanner -->
             {% if session.get('role') in ['admin', 'printer', 'Docs', 'scanner'] %}
+            <a href="/scan_sku_location" class="card card-sku-location">
+                <div class="card-icon"><i class="fas fa-barcode"></i></div>
+                <h3>Scan SKU</h3>
+                <p>Scan barcode th&ugrave;ng v&agrave;o location</p>
+            </a>
+
+            <a href="/findsku" class="card card-findsku">
+                <div class="card-icon"><i class="fas fa-magnifying-glass-location"></i></div>
+                <h3>Find SKU</h3>
+                <p>T&igrave;m SKU &#273;ang n&#7857;m &#7903; location n&agrave;o</p>
+            </a>
+
             <a href="/stats" class="card card-stats">
                 <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
                 <h3>Thống Kê</h3>
@@ -270,6 +298,20 @@
                 <p>Thêm, sửa, xóa tài khoản hệ thống</p>
             </a>
             {% endif %}
+
+            <!-- Location: tất cả tài khoản được xem, chỉ admin được sửa/xóa -->
+            <a href="/location" class="card card-location">
+                <div class="card-icon"><i class="fas fa-location-dot"></i></div>
+                <h3>Location</h3>
+                <p>Xem danh s&aacute;ch location trong h&#7879; th&#7889;ng</p>
+            </a>
+
+            <!-- Inventory WHS: admin và scanner được sửa/xóa -->
+            <a href="/invetory_whs" class="card card-inventory">
+                <div class="card-icon"><i class="fas fa-warehouse"></i></div>
+                <h3>Inventory WHS</h3>
+                <p>Qu&#7843;n l&yacute; SKU, pallet v&agrave; carton theo location</p>
+            </a>
 
             <!-- Chức năng Quản lý Nhân viên: Chỉ dành cho admin -->
             {% if session.get('role') == 'admin' %}

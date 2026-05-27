@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quan ly Location</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 10px; background-color: #f4f4f4; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+        .btn-back { display: inline-block; text-decoration: none; color: #666; font-size: 16px; }
+        .user-box { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
+        .btn-add { background-color: #28a745; margin-bottom: 15px; font-size: 16px; padding: 10px 20px; }
+        .btn-edit { background-color: #ffc107; color: #333; margin-right: 5px; }
+        .btn-delete { background-color: #dc3545; }
+        .btn:hover { opacity: 0.9; }
+        .readonly-note { background: #eef6ff; border-left: 4px solid #0d6efd; color: #1f4f82; padding: 10px 12px; border-radius: 4px; margin-bottom: 15px; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 450px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
+        .close:hover { color: #000; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        @media (max-width: 640px) {
+            th, td { padding: 9px; font-size: 14px; }
+            .action-cell { min-width: 120px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a href="/" class="btn-back">&larr; Quay l&#7841;i Menu</a>
+            <div class="user-box">
+                <span style="font-weight: 600; color: #333;">Xin ch&agrave;o, {{ session.get('user') }}</span>
+                <a href="/logout" class="btn-back" style="color: #dc3545; font-weight: bold;">&#272;&#259;ng xu&#7845;t</a>
+            </div>
+        </div>
+
+        <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Qu&#7843;n L&yacute; Location</h2>
+
+        {% if session.get('role') == 'admin' %}
+        <button class="btn btn-add" onclick="openModal()">+ Th&ecirc;m Location</button>
+        {% else %}
+        <div class="readonly-note">T&agrave;i kho&#7843;n c&#7911;a b&#7841;n ch&#7881; c&oacute; quy&#7873;n xem danh s&aacute;ch location.</div>
+        {% endif %}
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 70px;">ID</th>
+                    <th style="width: 220px;">Location ID</th>
+                    <th>Description</th>
+                    {% if session.get('role') == 'admin' %}
+                    <th class="action-cell" style="width: 150px; text-align: center;">H&agrave;nh &#273;&#7897;ng</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody id="locationTableBody">
+                <tr><td colspan="{{ 4 if session.get('role') == 'admin' else 3 }}" style="text-align: center;">&#272;ang t&#7843;i d&#7919; li&#7879;u...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% if session.get('role') == 'admin' %}
+    <div id="locationModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin-top: 0;">Th&ecirc;m Location</h3>
+            <input type="hidden" id="locationId">
+
+            <div class="form-group">
+                <label>Location ID <span style="color:red">*</span></label>
+                <input type="text" id="locId" maxlength="50" placeholder="Nhap Location ID">
+            </div>
+
+            <div class="form-group">
+                <label>Description</label>
+                <input type="text" id="description" maxlength="100" placeholder="Nhap mo ta">
+            </div>
+
+            <button class="btn btn-add" style="width: 100%; margin-bottom: 0;" onclick="saveLocation()">L&#432;u th&ocirc;ng tin</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        const isAdmin = "{{ session.get('role') }}" === "admin";
+        const modal = document.getElementById('locationModal');
+
+        function setTextCell(row, value) {
+            const cell = document.createElement('td');
+            cell.textContent = value || '';
+            row.appendChild(cell);
+            return cell;
+        }
+
+        function loadLocations() {
+            fetch('/api/location/list')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('locationTableBody');
+                    tbody.innerHTML = '';
+
+                    if (!data.success) {
+                        const row = document.createElement('tr');
+                        const cell = setTextCell(row, data.message || 'Khong tai duoc du lieu');
+                        cell.colSpan = isAdmin ? 4 : 3;
+                        cell.style.textAlign = 'center';
+                        tbody.appendChild(row);
+                        return;
+                    }
+
+                    if (data.locations.length === 0) {
+                        const row = document.createElement('tr');
+                        const cell = setTextCell(row, 'Chua co du lieu');
+                        cell.colSpan = isAdmin ? 4 : 3;
+                        cell.style.textAlign = 'center';
+                        tbody.appendChild(row);
+                        return;
+                    }
+
+                    data.locations.forEach(item => {
+                        const row = document.createElement('tr');
+                        setTextCell(row, item.id);
+                        const locCell = setTextCell(row, item.loc_id);
+                        locCell.style.fontWeight = '700';
+                        setTextCell(row, item.description);
+
+                        if (isAdmin) {
+                            const actionCell = document.createElement('td');
+                            actionCell.style.textAlign = 'center';
+
+                            const editBtn = document.createElement('button');
+                            editBtn.className = 'btn btn-edit';
+                            editBtn.textContent = 'Sua';
+                            editBtn.onclick = () => editLocation(item.id, item.loc_id, item.description);
+
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'btn btn-delete';
+                            deleteBtn.textContent = 'Xoa';
+                            deleteBtn.onclick = () => deleteLocation(item.id, item.loc_id);
+
+                            actionCell.appendChild(editBtn);
+                            actionCell.appendChild(deleteBtn);
+                            row.appendChild(actionCell);
+                        }
+
+                        tbody.appendChild(row);
+                    });
+                });
+        }
+
+        function openModal() {
+            if (!isAdmin) return;
+            document.getElementById('locationId').value = '';
+            document.getElementById('locId').value = '';
+            document.getElementById('description').value = '';
+            document.getElementById('modalTitle').innerText = 'Them Location';
+            modal.style.display = 'block';
+        }
+
+        function editLocation(id, locId, description) {
+            if (!isAdmin) return;
+            document.getElementById('locationId').value = id;
+            document.getElementById('locId').value = locId || '';
+            document.getElementById('description').value = description || '';
+            document.getElementById('modalTitle').innerText = 'Sua Location';
+            modal.style.display = 'block';
+        }
+
+        function closeModal() {
+            if (modal) modal.style.display = 'none';
+        }
+
+        window.onclick = function(e) {
+            if (modal && e.target === modal) closeModal();
+        };
+
+        function saveLocation() {
+            if (!isAdmin) return;
+            const id = document.getElementById('locationId').value;
+            const loc_id = document.getElementById('locId').value.trim();
+            const description = document.getElementById('description').value.trim();
+
+            if (!loc_id) {
+                alert('Vui long nhap Location ID');
+                return;
+            }
+
+            fetch('/api/location/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, loc_id, description})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    closeModal();
+                    loadLocations();
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+
+        function deleteLocation(id, locId) {
+            if (!isAdmin) return;
+            if (confirm('Ban co chac muon xoa location: ' + locId + '?')) {
+                fetch('/api/location/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id})
+                }).then(r => r.json()).then(data => {
+                    if (data.success) loadLocations();
+                    else alert(data.message);
+                });
+            }
+        }
+
+        loadLocations();
+    </script>
+</body>
+</html>

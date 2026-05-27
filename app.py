@@ -20,6 +20,8 @@ from models.log import Log
 from models.employees import Employee
 from models.inbound import Inbound
 from models.labor_assignment import LaborAssignment
+from models.location import Location
+from models.invetory_whs import InventoryWhs
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -718,7 +720,432 @@ def print_label():
 @app.route('/users')
 def users_manage():
     if 'user' not in session: return redirect(url_for('login'))
+    if session.get('role') != 'admin': return redirect(url_for('index'))
     return render_template('users.html')
+
+@app.route('/api/users/list')
+def get_users_list():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền'}), 401
+    try:
+        users = User.query.all()
+        data = [{'id': u.id, 'username': u.username, 'role': u.role} for u in users]
+        return jsonify({'success': True, 'users': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/save', methods=['POST'])
+def save_user():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền'}), 401
+    
+    data = request.json
+    uid = data.get('id')
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role')
+    
+    if not username:
+        return jsonify({'success': False, 'message': 'Tên đăng nhập là bắt buộc'}), 400
+        
+    try:
+        if uid: # Chế độ Sửa
+            user = User.query.get(uid)
+            if not user: return jsonify({'success': False, 'message': 'Người dùng không tồn tại'}), 404
+            user.username = username
+            user.role = role
+            if password: # Chỉ cập nhật mật khẩu nếu có nhập mới
+                user.password = password
+        else: # Chế độ Thêm mới
+            if not password:
+                return jsonify({'success': False, 'message': 'Mật khẩu là bắt buộc khi tạo tài khoản mới'}), 400
+            new_user = User(username=username, password=password, role=role)
+            db.session.add(new_user)
+            
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/delete', methods=['POST'])
+def delete_user():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền'}), 401
+    
+    data = request.json
+    uid = data.get('id')
+    try:
+        user = User.query.get(uid)
+        if user:
+            if user.username == session.get('user'):
+                return jsonify({'success': False, 'message': 'Bạn không thể tự xóa chính mình'}), 400
+            db.session.delete(user)
+            db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/location')
+def location_manage():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('location.html')
+
+@app.route('/api/location/list')
+def get_location_list():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
+        data = [
+            {
+                'id': item.id,
+                'loc_id': item.loc_id or '',
+                'description': item.description or ''
+            }
+            for item in locations
+        ]
+        return jsonify({'success': True, 'locations': data, 'can_edit': session.get('role') == 'admin'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/location/save', methods=['POST'])
+def save_location():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    location_id = data.get('id')
+    loc_id = (data.get('loc_id') or '').strip()
+    description = (data.get('description') or '').strip()
+
+    if not loc_id:
+        return jsonify({'success': False, 'message': 'Location ID is required'}), 400
+
+    try:
+        duplicate_query = Location.query.filter(Location.loc_id == loc_id)
+        if location_id:
+            duplicate_query = duplicate_query.filter(Location.id != location_id)
+        if duplicate_query.first():
+            return jsonify({'success': False, 'message': 'Location ID already exists'}), 400
+
+        if location_id:
+            item = Location.query.get(location_id)
+            if not item:
+                return jsonify({'success': False, 'message': 'Location not found'}), 404
+            item.loc_id = loc_id
+            item.description = description
+        else:
+            item = Location(loc_id=loc_id, description=description)
+            db.session.add(item)
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/location/delete', methods=['POST'])
+def delete_location():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    location_id = data.get('id')
+
+    try:
+        item = Location.query.get(location_id)
+        if item:
+            db.session.delete(item)
+            db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+def _can_edit_inventory_whs():
+    return session.get('role') in ['admin', 'scanner']
+
+@app.route('/invetory_whs')
+def invetory_whs_manage():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('invetory_whs.html')
+
+@app.route('/api/invetory_whs/list')
+def get_invetory_whs_list():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        rows = (
+            db.session.query(InventoryWhs, Location)
+            .outerjoin(Location, InventoryWhs.loc_id == Location.id)
+            .order_by(InventoryWhs.time_update.desc(), InventoryWhs.id.desc())
+            .all()
+        )
+        data = []
+        for item, location in rows:
+            data.append({
+                'id': item.id,
+                'loc_id': item.loc_id,
+                'location_code': location.loc_id if location else '',
+                'location_description': location.description if location else '',
+                'sku': item.sku or '',
+                'pallet': item.pallet if item.pallet is not None else 0,
+                'carton': item.carton if item.carton is not None else 0,
+                'time_update': item.time_update.strftime('%H:%M:%S %d/%m/%Y') if item.time_update else ''
+            })
+
+        locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
+        location_options = [
+            {
+                'id': loc.id,
+                'loc_id': loc.loc_id or '',
+                'description': loc.description or ''
+            }
+            for loc in locations
+        ]
+
+        return jsonify({
+            'success': True,
+            'items': data,
+            'locations': location_options,
+            'can_edit': _can_edit_inventory_whs()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/invetory_whs/save', methods=['POST'])
+def save_invetory_whs():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if not _can_edit_inventory_whs():
+        return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    item_id = data.get('id')
+    loc_id = data.get('loc_id')
+    sku = (data.get('sku') or '').strip()
+    pallet = data.get('pallet')
+    carton = data.get('carton')
+
+    if not loc_id:
+        return jsonify({'success': False, 'message': 'Location is required'}), 400
+    if not sku:
+        return jsonify({'success': False, 'message': 'SKU is required'}), 400
+
+    try:
+        loc_id = int(loc_id)
+        pallet = int(pallet or 0)
+        carton = int(carton or 0)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Location, pallet and carton must be numbers'}), 400
+
+    if not Location.query.get(loc_id):
+        return jsonify({'success': False, 'message': 'Location not found'}), 404
+
+    try:
+        if item_id:
+            item = InventoryWhs.query.get(item_id)
+            if not item:
+                return jsonify({'success': False, 'message': 'Inventory item not found'}), 404
+        else:
+            item = InventoryWhs()
+            db.session.add(item)
+
+        item.loc_id = loc_id
+        item.sku = sku
+        item.pallet = pallet
+        item.carton = carton
+        item.time_update = datetime.now()
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/invetory_whs/delete', methods=['POST'])
+def delete_invetory_whs():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if not _can_edit_inventory_whs():
+        return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    item_id = data.get('id')
+
+    try:
+        item = InventoryWhs.query.get(item_id)
+        if item:
+            db.session.delete(item)
+            db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/scan_sku_location')
+def scan_sku_location():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('scan_sku_location.html')
+
+@app.route('/api/scan_sku_location/options')
+def get_scan_sku_location_options():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
+        data = [
+            {
+                'id': loc.id,
+                'loc_id': loc.loc_id or '',
+                'description': loc.description or ''
+            }
+            for loc in locations
+        ]
+        return jsonify({'success': True, 'locations': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/scan_sku_location/update', methods=['POST'])
+def update_scan_sku_location():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    loc_id = data.get('loc_id')
+    barcode = (data.get('barcode') or '').strip()
+    carton = data.get('carton')
+
+    if not loc_id:
+        return jsonify({'success': False, 'message': 'Location is required'}), 400
+    if not barcode:
+        return jsonify({'success': False, 'message': 'Barcode is required'}), 400
+
+    try:
+        loc_id = int(loc_id)
+        carton = int(carton or 0)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Location and carton must be numbers'}), 400
+
+    if carton <= 0:
+        return jsonify({'success': False, 'message': 'Carton must be greater than 0'}), 400
+    if len(barcode) < 5:
+        return jsonify({'success': False, 'message': 'Barcode must have at least 5 characters'}), 400
+
+    location = Location.query.get(loc_id)
+    if not location:
+        return jsonify({'success': False, 'message': 'Location not found'}), 404
+
+    refix_val = barcode[-5:]
+    sku = _refix_cache.get(refix_val)
+    if not sku:
+        master_item = MasterData.query.filter_by(refix=refix_val).first()
+        if not master_item:
+            return jsonify({'success': False, 'message': f'Refix {refix_val} not found in masterdata'}), 404
+        sku = master_item.sku
+        _refix_cache[refix_val] = sku
+
+    try:
+        item = InventoryWhs.query.filter_by(loc_id=loc_id, sku=sku, pallet=1).first()
+        if item:
+            item.carton = (item.carton or 0) + carton
+        else:
+            item = InventoryWhs(loc_id=loc_id, sku=sku, pallet=1, carton=carton)
+            db.session.add(item)
+
+        item.time_update = datetime.now()
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Updated inventory successfully',
+            'id': item.id,
+            'refix': refix_val,
+            'sku': sku,
+            'loc_id': location.loc_id,
+            'location_description': location.description or '',
+            'pallet': item.pallet,
+            'carton_added': carton,
+            'carton_total': item.carton,
+            'time_update': item.time_update.strftime('%H:%M:%S %d/%m/%Y') if item.time_update else ''
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/findsku')
+def findsku_page():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('findsku.html')
+
+@app.route('/api/findsku/search', methods=['POST'])
+def findsku_search():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    sku = (data.get('sku') or '').strip()
+    if not sku:
+        return jsonify({'success': False, 'message': 'SKU is required'}), 400
+
+    try:
+        rows = (
+            db.session.query(
+                InventoryWhs.loc_id,
+                InventoryWhs.sku,
+                InventoryWhs.pallet,
+                func.sum(InventoryWhs.carton).label('carton'),
+                func.max(InventoryWhs.time_update).label('time_update'),
+                Location.loc_id.label('location_code'),
+                Location.description.label('location_description')
+            )
+            .outerjoin(Location, InventoryWhs.loc_id == Location.id)
+            .filter(func.lower(InventoryWhs.sku) == sku.lower())
+            .group_by(
+                InventoryWhs.loc_id,
+                InventoryWhs.sku,
+                InventoryWhs.pallet,
+                Location.loc_id,
+                Location.description
+            )
+            .order_by(Location.loc_id.asc(), InventoryWhs.pallet.asc())
+            .all()
+        )
+
+        results = [
+            {
+                'loc_id': row.loc_id,
+                'location_code': row.location_code or '',
+                'location_description': row.location_description or '',
+                'sku': row.sku or '',
+                'pallet': row.pallet if row.pallet is not None else 0,
+                'carton': int(row.carton or 0),
+                'time_update': row.time_update.strftime('%H:%M:%S %d/%m/%Y') if row.time_update else ''
+            }
+            for row in rows
+        ]
+
+        return jsonify({
+            'success': True,
+            'sku': sku,
+            'results': results,
+            'total_carton': sum(item['carton'] for item in results)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -2051,7 +2478,7 @@ def create_labor_assignment():
 
 
 
-if __name__ == '__main__':
+if False and __name__ == '__main__':
     # --- KIỂM TRA KẾT NỐI KHI KHỞI ĐỘNG ---
     print("--- Đang khởi động ứng dụng và kiểm tra kết nối Database... ---")
     with app.app_context():
@@ -2117,3 +2544,23 @@ def unread_count():
         return jsonify({'success': True, 'count': count})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e), 'count': 0}), 500
+
+
+if __name__ == '__main__':
+    print("--- Starting app and checking database connection... ---")
+    with app.app_context():
+        try:
+            db.session.execute(text('SELECT 1'))
+            print("Database connection OK.")
+        except Exception as e:
+            print("Database connection failed.")
+            print(f"Error detail: {e}")
+
+    port_str = os.environ.get("PORT", "5000")
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 5000
+        print(f"Invalid PORT, using default {port}")
+
+    app.run(host='0.0.0.0', port=port)
