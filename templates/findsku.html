@@ -50,7 +50,7 @@
         <div class="search-row">
             <div class="form-group">
                 <label>SKU</label>
-                <input type="text" id="skuInput" autocomplete="off" placeholder="Nhap SKU can tim">
+                <input type="text" id="skuInput" autocomplete="off" placeholder="Nhap SKU hoac mot phan so SKU">
             </div>
             <button id="btnSearch" class="btn btn-search" onclick="searchSku()">T&igrave;m SKU</button>
         </div>
@@ -129,7 +129,7 @@
                 document.getElementById('summaryCarton').textContent = data.total_carton;
 
                 if (data.results.length === 0) {
-                    showStatus('info', 'SKU nay chua co trong Inventory WHS');
+                    showStatus('info', 'Khong tim thay SKU khop voi noi dung da nhap');
                     setEmptyRow('Khong tim thay location nao');
                     return;
                 }

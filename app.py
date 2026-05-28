@@ -1113,7 +1113,7 @@ def findsku_search():
                 Location.description.label('location_description')
             )
             .outerjoin(Location, InventoryWhs.loc_id == Location.id)
-            .filter(func.lower(InventoryWhs.sku) == sku.lower())
+            .filter(InventoryWhs.sku.contains(sku, autoescape=True))
             .group_by(
                 InventoryWhs.loc_id,
                 InventoryWhs.sku,
