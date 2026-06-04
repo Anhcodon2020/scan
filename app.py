@@ -606,7 +606,7 @@ def stats():
         Scanfile.pallet,
         Scanfile.pallet_type,
         func.count(Scanfile.id),
-        Scanfile.confirm
+        func.max(Scanfile.confirm)
     ).filter(
         Scanfile.pallet != '',
         Scanfile.pallet != None
@@ -620,43 +620,42 @@ def stats():
         Scanfile.jobno,
         Scanfile.jobno_type,
         Scanfile.pallet,
-        Scanfile.pallet_type,
-        Scanfile.confirm
+        Scanfile.pallet_type
     ).all()
 
     stats_data = {}
-    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'total_cbm': 0, 'total_weight': 0}
+    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'total_weight': 0, 'total_pallet_type_cbm': 0}
 
     for job_no, job_type, pallet_no, p_type, sscc_count, confirm in pallets:
-        # Key: (Job No, Job Type)
+        # Key: (Job No, Job Type) - Đồng bộ với các phần tính toán CBM và SKU bên dưới
         key = (job_no, job_type) 
         
         if key not in stats_data:
-            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'cbm': 0, 'weight': 0}
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'weight': 0, 'pallet_type_cbm': 0}
         
         p_type_str = str(p_type) if p_type else ''
         
         # Nếu là loose hoặc loosecarton thì tính theo số lượng SSCC, ngược lại tính là 1 pallet
         increment = sscc_count if 'loose' in p_type_str.lower() else 1
         
-        curr_cbm = 0
         curr_weight = 0
+        curr_pallet_cbm = 0
 
         if '1.2' in p_type_str:
             stats_data[key]['1.2'] += increment
             grand_total['1.2'] += increment
-            curr_cbm = increment * 0.1404
             curr_weight = increment * 15.5
+            curr_pallet_cbm = increment * 0.1404
         elif '1.6' in p_type_str:
             stats_data[key]['1.6'] += increment
             grand_total['1.6'] += increment
-            curr_cbm = increment * 0.1872
             curr_weight = increment * 20.5
+            curr_pallet_cbm = increment * 0.1872
         elif '1.9' in p_type_str:
             stats_data[key]['1.9'] += increment
             grand_total['1.9'] += increment
-            curr_cbm = increment * 0.2223
             curr_weight = increment * 22
+            curr_pallet_cbm = increment * 0.2223
         else:
             stats_data[key]['loose'] += increment
             grand_total['loose'] += increment
@@ -665,11 +664,12 @@ def stats():
         grand_total['total'] += increment
         stats_data[key]['total_box'] += sscc_count
         grand_total['total_box'] += sscc_count
+
+        stats_data[key]['pallet_type_cbm'] = round(stats_data[key]['pallet_type_cbm'] + curr_pallet_cbm, 4)
+        grand_total['total_pallet_type_cbm'] = round(grand_total['total_pallet_type_cbm'] + curr_pallet_cbm, 4)
         
-        # Cộng dồn CBM và Weight
-        stats_data[key]['cbm'] += curr_cbm
+        # Cộng dồn Weight pallet
         stats_data[key]['weight'] += curr_weight
-        grand_total['total_cbm'] += curr_cbm
         grand_total['total_weight'] += curr_weight
 
         if confirm == 'Y':
@@ -690,13 +690,61 @@ def stats():
     remain_query = remain_q.group_by(Scanfile.jobno, Scanfile.jobno_type).all()
 
     remain_stats = {}
+    grand_total_remain_sscc = 0
     for job_no, job_type, count in remain_query:
         key = (job_no, job_type)
         remain_stats[key] = count
+        grand_total_remain_sscc += count
         
         # [FIX] Đảm bảo Job có hàng tồn nhưng chưa scan pallet nào vẫn hiện lên bảng
         if key not in stats_data:
-            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'cbm': 0, 'weight': 0}
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'weight': 0, 'pallet_type_cbm': 0}
+
+    # 3. Mapping SKU qua MasterData để tính CBM theo Job Type
+    master_cbm_sq = db.session.query(
+        MasterData.sku.label('sku'),
+        func.max(MasterData.cbm).label('cbm')
+    ).group_by(MasterData.sku).subquery()
+    sku_cbm = func.coalesce(master_cbm_sq.c.cbm, 0)
+
+    grand_total['total_cbm'] = 0
+    grand_total['scanned_cbm'] = 0
+    grand_total['remain_cbm'] = 0
+    cbm_q = db.session.query(
+        Scanfile.jobno,
+        Scanfile.jobno_type,
+        func.sum(sku_cbm),
+        func.sum(case((Scanfile.pallet != '', sku_cbm), else_=0)),
+        func.sum(case(((Scanfile.pallet == '') | (Scanfile.pallet == None), sku_cbm), else_=0))
+    ).outerjoin(
+        master_cbm_sq,
+        Scanfile.sku == master_cbm_sq.c.sku
+    )
+
+    if selected_job:
+        cbm_q = cbm_q.filter(Scanfile.jobno == selected_job)
+
+    cbm_rows = cbm_q.group_by(Scanfile.jobno, Scanfile.jobno_type).all()
+
+    for job_no, job_type, total_cbm, scanned_cbm, remain_cbm in cbm_rows:
+        key = (job_no, job_type)
+        if key not in stats_data:
+            stats_data[key] = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'confirm': 'N', 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'weight': 0, 'pallet_type_cbm': 0}
+
+        total_cbm = round(float(total_cbm or 0), 3)
+        scanned_cbm = round(float(scanned_cbm or 0), 3)
+        remain_cbm = round(float(remain_cbm or 0), 3)
+
+        stats_data[key]['total_cbm'] = total_cbm
+        stats_data[key]['scanned_cbm'] = scanned_cbm
+        stats_data[key]['remain_cbm'] = remain_cbm
+        grand_total['total_cbm'] += total_cbm
+        grand_total['scanned_cbm'] += scanned_cbm
+        grand_total['remain_cbm'] += remain_cbm
+
+    grand_total['total_cbm'] = round(grand_total['total_cbm'], 3)
+    grand_total['scanned_cbm'] = round(grand_total['scanned_cbm'], 3)
+    grand_total['remain_cbm'] = round(grand_total['remain_cbm'], 3)
 
     return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats, 
                            jobs=job_list, selected_job=selected_job)
@@ -1181,6 +1229,7 @@ def get_print_data():
             Scanfile.pallet,
             Scanfile.sku,
             func.count(Scanfile.id).label('sscc_count'),
+            func.max(Scanfile.jobscan).label('jobnoscan'),
             func.max(Scanfile.tag_label).label('tag_label'),
             func.max(Scanfile.pallet_type).label('pallet_type'),
             func.max(Scanfile.jobscan).label('jobscan'),
@@ -1213,6 +1262,7 @@ def get_print_data():
                 pallets_data[key] = {
                     'pallet_no': row.pallet,
                     'pallet_type': row.pallet_type,
+                    'jobnoscan': row.jobnoscan,
                     'jobscan': row.jobscan,
                     'ship_to': row.ship_to,
                     'master_add1': row.master_add1,

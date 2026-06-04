@@ -94,6 +94,7 @@
                     <li class="nav-item"><a class="nav-link" href="/logout">Đăng xuất</a></li>
                 </ul>
             </div>
+
         </div>
     </nav>
 
@@ -159,12 +160,15 @@
                                 <i class="fas fa-scale-balanced"></i>
                             </div>
                             <div>
-                                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Tổng Sản Lượng</div>
+                                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">CBM MasterData</div>
                                 <div class="h5 mb-0 font-weight-bold text-gray-800">
-                                    {{ (grand_total['total_cbm']) }} <small class="text-muted" style="font-size: 0.7rem;">m³</small>
+                                    {{ (grand_total['total_cbm']) }} <small class="text-muted" style="font-size: 0.7rem;">m³ tổng</small>
                                 </div>
-                                <div class="h5 mb-0 font-weight-bold text-gray-800">
-                                    {{ (grand_total['total_weight']) }} <small class="text-muted" style="font-size: 0.7rem;">kg</small>
+                                <div class="small text-success fw-bold">
+                                    Scan: {{ (grand_total['scanned_cbm']) }} m³
+                                </div>
+                                <div class="small text-danger fw-bold">
+                                    Còn: {{ (grand_total['remain_cbm']) }} m³
                                 </div>
                             </div>
                         </div>
@@ -181,30 +185,45 @@
                             <div class="col-6 mb-3">
                                 <h4 class="text-info mb-0">{{ grand_total['1.2'] }}</h4>
                                 <small class="text-muted fw-bold">1.2m</small>
-                                <div class="text-muted" style="font-size: 0.7rem;">
-                                    <div>{{ (grand_total['1.2'] * 0.1404) }} m³</div>
-                                    <div>{{ (grand_total['1.2'] * 15.5) }} kg</div>
-                                </div>
+                                <div class="text-muted" style="font-size: 0.7rem;">{{ (grand_total['1.2'] * 15.5) }} kg</div>
                             </div>
                             <div class="col-6 mb-3">
                                 <h4 class="text-warning mb-0">{{ grand_total['1.6'] }}</h4>
                                 <small class="text-muted fw-bold">1.6m</small>
-                                <div class="text-muted" style="font-size: 0.7rem;">
-                                    <div>{{ (grand_total['1.6'] * 0.1872) }} m³</div>
-                                    <div>{{ (grand_total['1.6'] * 20.5) }} kg</div>
-                                </div>
+                                <div class="text-muted" style="font-size: 0.7rem;">{{ (grand_total['1.6'] * 20.5) }} kg</div>
                             </div>
                             <div class="col-6">
                                 <h4 class="text-primary mb-0">{{ grand_total['1.9'] }}</h4>
                                 <small class="text-muted fw-bold">1.9m</small>
-                                <div class="text-muted" style="font-size: 0.7rem;">
-                                    <div>{{ (grand_total['1.9'] * 0.2223) }} m³</div>
-                                    <div>{{ (grand_total['1.9'] * 22) }} kg</div>
-                                </div>
+                                <div class="text-muted" style="font-size: 0.7rem;">{{ (grand_total['1.9'] * 22) }} kg</div>
                             </div>
                             <div class="col-6">
                                 <h4 class="text-secondary mb-0">{{ grand_total['loose'] }}</h4>
                                 <small class="text-muted">Lẻ</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pallet CBM -->
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card h-100 py-2 border-start border-4 border-warning">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center">
+                            <div class="stat-card-icon bg-gradient-warning">
+                                <i class="fas fa-cubes"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">CBM Pallet</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                    {{ grand_total['total_pallet_type_cbm'] }} <small class="text-muted" style="font-size: 0.7rem;">m³</small>
+                                </div>
+                                <div class="small text-warning fw-bold">
+                                    Gross Weight: {{ grand_total['total_weight'] }} kg
+                                </div>
+                                <div class="small text-muted fw-bold">1.2m=0.1404 | 1.6m=0.1872 | 1.9m=0.2223</div>
+                                <div class="small text-muted fw-bold">1.2m=15.5kg | 1.6m=20.5kg | 1.9m=22kg</div>
                             </div>
                         </div>
                     </div>
@@ -215,7 +234,7 @@
         <!-- Main Table -->
         <div class="card shadow mb-4">
             <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
-                <h6 class="m-0 font-weight-bold text-primary">Chi tiết theo Job</h6>
+                <h6 class="m-0 font-weight-bold text-primary">Chi tiết theo Job Type</h6>
                 <span class="badge bg-secondary">{{ stats|length }} dòng dữ liệu</span>
             </div>
             <div class="card-body p-0">
@@ -224,14 +243,17 @@
                         <thead>
                             <tr>
                                 <th class="ps-4">Job No</th>
-                                <th>Loại hàng</th>
+                                <th>Job Type</th>
                                 <th class="text-center text-info">1.2m</th>
                                 <th class="text-center text-warning">1.6m</th>
                                 <th class="text-center text-primary">1.9m</th>
                                 <th class="text-center text-secondary">Lẻ (Hộp)</th>
                                 <th class="text-center fw-bold bg-light">Tổng Pallet</th>
                                 <th class="text-center fw-bold bg-light">Tổng Thùng</th>
-                                <th class="text-center fw-bold text-info">CBM</th>
+                                <th class="text-center fw-bold text-info">Tổng CBM</th>
+                                <th class="text-center fw-bold text-success">CBM Đã Scan</th>
+                                <th class="text-center fw-bold text-danger">CBM Còn Lại</th>
+                                <th class="text-center fw-bold text-warning">CBM Pallet</th>
                                 <th class="text-center fw-bold text-warning">Kg</th>
                                 <th class="text-center text-danger">Chưa Scan</th>
                                 <th style="min-width: 150px;">Tiến độ</th>
@@ -239,8 +261,10 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for (job_no, job_type), data in stats.items() %}
-                            {% set remain = remain_stats.get((job_no, job_type), 0) %}
+                            {% for job_key, data in stats.items() %}
+                            {% set job_no = job_key[0] %}
+                            {% set job_type = job_key[1] %}
+                            {% set remain = remain_stats.get(job_key, 0) %}
                             {% set scanned = data['total_box'] %}
                             {% set total_expected = scanned + remain %}
                             {% set percent = (scanned / total_expected * 100)|round(0) if total_expected > 0 else 100 %}
@@ -252,12 +276,11 @@
                                         <i class="fas fa-check-circle text-success ms-1" title="Đã xác nhận"></i>
                                     {% endif %}
                                 </td>
-                                <td><span class="badge bg-light text-dark border">{{ job_type }}</span></td>
+                                <td class="fw-bold">{{ job_type }}</td>
                                 <td class="text-center">
                                     <div class="text-muted fw-bold">{{ data['1.2'] }}</div>
                                     {% if data['1.2'] > 0 %}
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
-                                        <div>{{ (data['1.2'] * 0.1404) }}m³</div>
                                         <div>{{ (data['1.2'] * 15.5) }}kg</div>
                                     </div>
                                     {% endif %}
@@ -266,7 +289,6 @@
                                     <div class="text-muted fw-bold">{{ data['1.6'] }}</div>
                                     {% if data['1.6'] > 0 %}
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
-                                        <div>{{ (data['1.6'] * 0.1872) }}m³</div>
                                         <div>{{ (data['1.6'] * 20.5) }}kg</div>
                                     </div>
                                     {% endif %}
@@ -275,7 +297,6 @@
                                     <div class="text-muted fw-bold">{{ data['1.9'] }}</div>
                                     {% if data['1.9'] > 0 %}
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-secondary mt-1 opacity-75">
-                                        <div>{{ (data['1.9'] * 0.2223) }}m³</div>
                                         <div>{{ (data['1.9'] * 22) }}kg</div>
                                     </div>
                                     {% endif %}
@@ -283,7 +304,10 @@
                                 <td class="text-center text-muted">{{ data['loose'] }}</td>
                                 <td class="text-center fw-bold">{{ data['total'] }}</td>
                                 <td class="text-center fw-bold text-success">{{ scanned }}</td>
-                                <td class="text-center text-info">{{ (data['cbm']) }}</td>
+                                <td class="text-center text-info">{{ (data['total_cbm']) }}</td>
+                                <td class="text-center text-success">{{ (data['scanned_cbm']) }}</td>
+                                <td class="text-center text-danger">{{ (data['remain_cbm']) }}</td>
+                                <td class="text-center text-warning">{{ data['pallet_type_cbm'] }}</td>
                                 <td class="text-center text-warning">{{ (data['weight']) }}</td>
                                 <td class="text-center text-danger fw-bold">{{ remain }}</td>
                                 <td class="pe-4">
@@ -299,9 +323,13 @@
                                         <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Đã xong</span>
                                     {% else %}
                                         {% if session.get('role') == 'admin' %}
+                                        {% if selected_job %}
                                         <button class="btn btn-sm btn-outline-primary" onclick="confirmJob('{{ job_no }}', '{{ job_type }}')">
                                             <i class="fas fa-check"></i> Duyệt
                                         </button>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Lọc Job để duyệt</span>
+                                        {% endif %}
                                         {% else %}
                                         <span class="badge bg-secondary">Chưa duyệt</span>
                                         {% endif %}
@@ -310,7 +338,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="11" class="text-center py-4 text-muted">
+                                <td colspan="16" class="text-center py-4 text-muted">
                                     <i class="fas fa-box-open fa-3x mb-3 d-block opacity-25"></i>
                                     Chưa có dữ liệu thống kê
                                 </td>
@@ -323,21 +351,18 @@
                                 <td class="text-center">
                                     <div>{{ grand_total['1.2'] }}</div>
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
-                                        <div>{{ (grand_total['1.2'] * 0.1404) }}m³</div>
                                         <div>{{ (grand_total['1.2'] * 15.5) }}kg</div>
                                     </div>
                                 </td>
                                 <td class="text-center">
                                     <div>{{ grand_total['1.6'] }}</div>
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
-                                        <div>{{ (grand_total['1.6'] * 0.1872) }}m³</div>
                                         <div>{{ (grand_total['1.6'] * 20.5) }}kg</div>
                                     </div>
                                 </td>
                                 <td class="text-center">
                                     <div>{{ grand_total['1.9'] }}</div>
                                     <div style="font-size: 0.65rem; line-height: 1.1;" class="text-muted mt-1 fw-normal">
-                                        <div>{{ (grand_total['1.9'] * 0.2223) }}m³</div>
                                         <div>{{ (grand_total['1.9'] * 22) }}kg</div>
                                     </div>
                                 </td>
@@ -345,6 +370,9 @@
                                 <td class="text-center text-primary">{{ grand_total['total'] }}</td>
                                 <td class="text-center text-success">{{ grand_total['total_box'] }}</td>
                                 <td class="text-center text-info">{{ (grand_total['total_cbm']) }}</td>
+                                <td class="text-center text-success">{{ (grand_total['scanned_cbm']) }}</td>
+                                <td class="text-center text-danger">{{ (grand_total['remain_cbm']) }}</td>
+                                <td class="text-center text-warning">{{ grand_total['total_pallet_type_cbm'] }}</td>
                                 <td class="text-center text-warning">{{ (grand_total['total_weight']) }}</td>
                                 <td class="text-center"></td>
                                 <td></td>

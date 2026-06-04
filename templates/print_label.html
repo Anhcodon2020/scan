@@ -65,6 +65,7 @@
                 </div>
 
                 <!-- Bảng thống kê -->
+                <div id="jobNoScanSummary" class="mb-2 text-muted fw-bold"></div>
                 <div class="table-responsive">
                     <table class="table table-bordered table-hover align-middle text-center" id="palletTable">
                         <thead>
@@ -72,7 +73,7 @@
                                 <th style="width: 5%;">STT</th>
                                 <th style="width: 10%;">Pallet No</th>
                                 <th style="width: 10%;">Loại Pallet</th>
-                                <th style="width: 20%;">Job Scan</th>
+                                <th style="width: 12%;">jobnoscan</th>
                                 <th style="width: 10%;">Số lượng (SSCC)</th>
                                 <th style="width: 15%;">Trọng lượng (Kg)</th>
                                 <th style="width: 10%;">Ghi chú</th>
@@ -100,6 +101,7 @@
         const filterSelect = document.getElementById('filterSelect');
         const tableBody = document.getElementById('tableBody');
         const refreshBtn = document.getElementById('refreshBtn');
+        const jobNoScanSummary = document.getElementById('jobNoScanSummary');
         const userRole = "{{ session.get('role') }}";
         let currentData = []; // Biến toàn cục để lưu dữ liệu hiện tại
 
@@ -142,8 +144,13 @@
                 refreshBtn.disabled = false;
                 if (data.success) {
                     currentData = data.items; // Lưu dữ liệu vào biến toàn cục
+                    const jobnoscanValues = [...new Set(currentData.map(item => item.jobnoscan).filter(Boolean))];
+                    jobNoScanSummary.innerHTML = jobnoscanValues.length
+                        ? `jobnoscan: <span class="badge bg-primary">${jobnoscanValues.join(', ')}</span>`
+                        : '';
                     filterAndRender();
                 } else {
+                    jobNoScanSummary.innerHTML = '';
                     tableBody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">Lỗi: ${data.message}</td></tr>`;
                 }
             })
@@ -151,6 +158,7 @@
                 refreshBtn.disabled = false;
                 console.error(err);
                 if (!isSilent) {
+                    jobNoScanSummary.innerHTML = '';
                     tableBody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">Lỗi JavaScript hoặc Máy chủ: ${err.message}</td></tr>`;
                 }
             });
@@ -171,6 +179,7 @@
         function renderTable(items) {
             try {
                 if (!items || items.length === 0) {
+                    jobNoScanSummary.innerHTML = '';
                     tableBody.innerHTML = '<tr><td colspan="9" class="text-muted py-3">Không tìm thấy dữ liệu pallet nào cho Job này.</td></tr>';
                     return;
                 }
@@ -263,7 +272,7 @@
                             <td>${index + 1}</td>
                             <td class="fw-bold text-primary">${item.pallet_no}</td>
                             <td>${item.pallet_type || '-'}</td>
-                            <td>${item.jobscan || ''}</td>
+                            <td class="fw-bold text-primary">${item.jobnoscan || '-'}</td>
                             <td class="fw-bold">${item.qty}</td>
                             <td>${totalWeight.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td>${note}</td>
@@ -483,11 +492,14 @@
                 <div class="label-part">
                     <div class="header">PALLET LABEL</div>
                     <div class="info-row">
-                        <span>Job No: <strong>${jobSelect.value}</strong></span>
-                        <span>Date: ${new Date().toLocaleDateString('en-GB')}</span>
+                        <span>Job Type: <strong>${jobSelect.value}</strong></span>
+                        <span>Job No Scan: <strong>${item.jobnoscan || '-'}</strong></span>
                     </div>
                     <div class="info-row">
+                        <span>Date: ${new Date().toLocaleDateString('en-GB')}</span>
                         <span>Pallet No: <strong>${item.pallet_no}</strong></span>
+                    </div>
+                    <div class="info-row">
                         <span>Type: ${item.pallet_type || 'N/A'}</span>
                     </div>
                     <table>
@@ -502,7 +514,6 @@
                     </div>
                     <div class="barcode-container">
                         ${barcodeImg ? '<img src="' + barcodeImg + '" />' : ''}
-                        ${!barcodeImg && jobScanToPrint ? '<div>Job Scan: ' + jobScanToPrint + '</div>' : ''}
                     </div>
                 </div>
             `;
