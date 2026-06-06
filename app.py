@@ -624,7 +624,7 @@ def stats():
     ).all()
 
     stats_data = {}
-    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'total_weight': 0, 'total_pallet_type_cbm': 0}
+    grand_total = {'1.2': 0, '1.6': 0, '1.9': 0, 'loose': 0, 'total': 0, 'total_box': 0, 'total_cbm': 0, 'scanned_cbm': 0, 'remain_cbm': 0, 'total_weight': 0, 'total_pallet_type_cbm': 0, 'userscan_names': []}
 
     for job_no, job_type, pallet_no, p_type, sscc_count, confirm in pallets:
         # Key: (Job No, Job Type) - Đồng bộ với các phần tính toán CBM và SKU bên dưới
@@ -745,6 +745,20 @@ def stats():
     grand_total['total_cbm'] = round(grand_total['total_cbm'], 3)
     grand_total['scanned_cbm'] = round(grand_total['scanned_cbm'], 3)
     grand_total['remain_cbm'] = round(grand_total['remain_cbm'], 3)
+
+    if selected_job:
+        grand_total['userscan_names'] = [
+            r[0] for r in db.session.query(Scanfile.userscan)
+            .filter(
+                Scanfile.jobno == selected_job,
+                Scanfile.userscan.isnot(None),
+                Scanfile.userscan != ''
+            )
+            .distinct()
+            .order_by(Scanfile.userscan)
+            .all()
+            if r[0]
+        ]
 
     return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats, 
                            jobs=job_list, selected_job=selected_job)
@@ -2078,11 +2092,14 @@ def delete_employee():
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
-# --- QUẢN LÝ SỬA PALLET TYPE (ADMIN ONLY) ---
+# --- QUẢN LÝ SỬA PALLET TYPE (ADMIN/SCANNER) ---
+def can_edit_pallet_type():
+    return session.get('role') in ['admin', 'scanner']
+
 @app.route('/edit_pallet_type')
 def edit_pallet_type():
     if 'user' not in session: return redirect(url_for('login'))
-    if session.get('role') != 'admin': return redirect(url_for('index'))
+    if not can_edit_pallet_type(): return redirect(url_for('index'))
     
     # Lấy danh sách Job Type có trong hệ thống
     job_types = []
@@ -2095,7 +2112,7 @@ def edit_pallet_type():
 
 @app.route('/api/admin/get_pallets_for_edit', methods=['POST'])
 def get_pallets_for_edit():
-    if 'user' not in session or session.get('role') != 'admin':
+    if 'user' not in session or not can_edit_pallet_type():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
     
     data = request.json
@@ -2123,7 +2140,7 @@ def get_pallets_for_edit():
 
 @app.route('/api/admin/update_pallet_type', methods=['POST'])
 def update_pallet_type():
-    if 'user' not in session or session.get('role') != 'admin':
+    if 'user' not in session or not can_edit_pallet_type():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
         
     data = request.json

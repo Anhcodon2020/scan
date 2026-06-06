@@ -349,8 +349,8 @@
             </a>
             {% endif %}
 
-            <!-- Chức năng Sửa Pallet Type: Chỉ dành cho admin -->
-            {% if session.get('role') == 'admin' %}
+            <!-- Chức năng Sửa Pallet Type: Dành cho admin và scanner -->
+            {% if session.get('role') in ['admin', 'scanner'] %}
             <a href="/edit_pallet_type" class="card" style="border-color: #fd7e14;">
                 <div class="card-icon" style="color: #fd7e14; background-color: rgba(253, 126, 20, 0.1);"><i class="fas fa-edit"></i></div>
                 <h3>Sửa Loại Pallet</h3>

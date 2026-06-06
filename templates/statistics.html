@@ -170,6 +170,14 @@
                                 <div class="small text-danger fw-bold">
                                     Còn: {{ (grand_total['remain_cbm']) }} m³
                                 </div>
+                                {% if selected_job and grand_total['userscan_names'] %}
+                                <div class="small text-muted fw-bold mt-2">
+                                    User scan:
+                                    {% for username in grand_total['userscan_names'] %}
+                                        <span class="badge bg-light text-dark border">{{ username }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
