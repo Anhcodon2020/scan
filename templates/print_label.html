@@ -73,7 +73,7 @@
                                 <th style="width: 5%;">STT</th>
                                 <th style="width: 10%;">Pallet No</th>
                                 <th style="width: 10%;">Loại Pallet</th>
-                                <th style="width: 12%;">jobnoscan</th>
+                                <th style="width: 12%;">Job scan</th>
                                 <th style="width: 10%;">Số lượng (SSCC)</th>
                                 <th style="width: 15%;">Trọng lượng (Kg)</th>
                                 <th style="width: 10%;">Ghi chú</th>
@@ -466,10 +466,10 @@
                 skuRows += `
                     <tr>
                         <td>${i + 1}</td>
-                        <td>${s.sku}</td>
-                        <td>${s.qty}</td>
-                        <td>${(s.sku_weight || 0).toFixed(2)}</td>
-                        <td>${(s.qty * (s.sku_weight || 0)).toFixed(2)}</td>
+                        <td class="sku-value">${s.sku}</td>
+                        <td class="qty-value">${s.qty}</td>
+                        <td class="kg-value">${(s.sku_weight || 0).toFixed(2)}</td>
+                        <td class="kg-value">${(s.qty * (s.sku_weight || 0)).toFixed(2)}</td>
                         ${noteCell}
                     </tr>
                 `;
@@ -507,9 +507,9 @@
                         <tbody>${skuRows}</tbody>
                     </table>
                     <div class="footer">
-                        <div class="footer-row"><span>Total Quantity (Box):</span><strong>${item.qty}</strong></div>
-                        <div class="footer-row"><span>Net Weight:</span><strong>${netWeight.toFixed(2)} Kg</strong></div>
-                        <div class="footer-row"><span>Pallet Weight (Tare):</span><strong>${palletTare} Kg</strong></div>
+                        <div class="footer-row"><span>Total Quantity (Box):</span><strong class="qty-value">${item.qty}</strong></div>
+                        <div class="footer-row"><span>Net Weight:</span><strong class="kg-value">${netWeight.toFixed(2)} Kg</strong></div>
+                        <div class="footer-row"><span>Pallet Weight (Tare):</span><strong class="kg-value">${palletTare} Kg</strong></div>
                         <div class="footer-row gross-weight"><span>GROSS WEIGHT:</span><span>${grossWeight.toFixed(2)} Kg</span></div>
                     </div>
                     <div class="barcode-container">
@@ -524,45 +524,49 @@
                 <head>
                     <title>Print Label - ${item.pallet_no}</title>
                     <style>
-                        @page { size: A4 portrait; margin: 8mm; }
+                        @page { size: 100mm 150mm; margin: 0; }
                         html, body {
-                            width: 210mm;
-                            min-height: 297mm;
+                            width: 100mm;
+                            height: 150mm;
                         }
                         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: white; }
                         .page-container {
-                            width: 100%;
-                            min-height: 281mm;
+                            width: 100mm;
+                            height: 150mm;
                             box-sizing: border-box;
                         }
                         .label-part {
                             width: 100%;
-                            min-height: 281mm;
-                            padding: 14px;
+                            height: 100%;
+                            padding: 5mm;
                             box-sizing: border-box;
-                            border: 1px dashed #ccc;
                             display: flex;
                             flex-direction: column;
                         }
-                        .header { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 18px; border-bottom: 2px solid #333; padding-bottom: 8px; }
-                        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 16px; }
-                        .info-row strong { font-size: 18px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 14px; margin-bottom: 14px; font-size: 14px; }
-                        th, td { border: 1px solid #000; padding: 8px; text-align: center; word-break: break-word; }
+                        .header { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 5px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+                        .info-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+                        .info-row strong { font-size: 13px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 5px; margin-bottom: 5px; font-size: 11px; }
+                        th, td { border: 1px solid #000; padding: 3px 4px; text-align: center; word-break: break-word; }
                         th { background-color: #f2f2f2; }
-                        .footer { margin-top: 20px; font-size: 16px; border-top: 2px solid #333; padding-top: 14px; }
-                        .footer-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-                        .gross-weight { font-size: 20px; font-weight: bold; margin-top: 12px; }
-                        .barcode-container { text-align: center; margin-top: auto; padding-top: 16px; }
-                        img { max-width: 70%; height: auto; }
+                        .sku-value { font-size: 18px; font-weight: 800; }
+                        .qty-value,
+                        .kg-value { font-size: 17px; font-weight: 800; }
+                        .footer { margin-top: 4px; font-size: 12px; border-top: 2px solid #333; padding-top: 4px; }
+                        .footer-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+                        .footer .qty-value,
+                        .footer .kg-value { font-size: 19px; }
+                        .gross-weight { font-size: 22px; font-weight: bold; margin-top: 3px; }
+                        .barcode-container { text-align: center; margin-top: auto; padding-top: 4px; }
+                        img { max-width: 55%; height: auto; }
                         @media print {
                             html, body {
-                                width: 210mm;
-                                min-height: 297mm;
+                                width: 100mm;
+                                height: 150mm;
                             }
                             .page-container,
                             .label-part {
-                                min-height: 281mm;
+                                height: 150mm;
                             }
                         }
                     </style>
