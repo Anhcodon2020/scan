@@ -60,16 +60,15 @@
                         <th style="width: 160px;">Location</th>
                         <th>Description</th>
                         <th style="width: 180px;">SKU</th>
-                        <th style="width: 90px; text-align: right;">Pallet</th>
-                        <th style="width: 90px; text-align: right;">Carton</th>
-                        <th style="width: 160px;">Time Update</th>
+                        <th style="width: 90px; text-align: right;">Sub Loc</th>
+                        <th style="width: 90px; text-align: right;">Qty</th>
                         {% if session.get('role') in ['admin', 'scanner'] %}
                         <th style="width: 150px; text-align: center;">H&agrave;nh &#273;&#7897;ng</th>
                         {% endif %}
                     </tr>
                 </thead>
                 <tbody id="inventoryTableBody">
-                    <tr><td colspan="{{ 8 if session.get('role') in ['admin', 'scanner'] else 7 }}" style="text-align: center;">&#272;ang t&#7843;i d&#7919; li&#7879;u...</td></tr>
+                    <tr><td colspan="{{ 7 if session.get('role') in ['admin', 'scanner'] else 6 }}" style="text-align: center;">&#272;ang t&#7843;i d&#7919; li&#7879;u...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -93,13 +92,13 @@
             </div>
 
             <div class="form-group">
-                <label>Pallet</label>
-                <input type="number" id="pallet" min="0" step="1" value="0">
+                <label>Sub Loc</label>
+                <input type="number" id="subLoc" min="0" step="1" value="0">
             </div>
 
             <div class="form-group">
-                <label>Carton</label>
-                <input type="number" id="carton" min="0" step="1" value="0">
+                <label>Qty</label>
+                <input type="number" id="qty" min="0" step="1" value="0">
             </div>
 
             <button class="btn btn-add" style="width: 100%; margin-bottom: 0;" onclick="saveInventory()">L&#432;u th&ocirc;ng tin</button>
@@ -142,7 +141,7 @@
                     if (!data.success) {
                         const row = document.createElement('tr');
                         const cell = setTextCell(row, data.message || 'Khong tai duoc du lieu');
-                        cell.colSpan = canEdit ? 8 : 7;
+                        cell.colSpan = canEdit ? 7 : 6;
                         cell.style.textAlign = 'center';
                         tbody.appendChild(row);
                         return;
@@ -154,7 +153,7 @@
                     if (data.items.length === 0) {
                         const row = document.createElement('tr');
                         const cell = setTextCell(row, 'Chua co du lieu');
-                        cell.colSpan = canEdit ? 8 : 7;
+                        cell.colSpan = canEdit ? 7 : 6;
                         cell.style.textAlign = 'center';
                         tbody.appendChild(row);
                         return;
@@ -167,9 +166,8 @@
                         locCell.style.fontWeight = '700';
                         setTextCell(row, item.location_description);
                         setTextCell(row, item.sku);
-                        setTextCell(row, item.pallet, true);
-                        setTextCell(row, item.carton, true);
-                        setTextCell(row, item.time_update);
+                        setTextCell(row, item.sub_loc, true);
+                        setTextCell(row, item.qty, true);
 
                         if (canEdit) {
                             const actionCell = document.createElement('td');
@@ -204,8 +202,8 @@
             document.getElementById('inventoryId').value = '';
             document.getElementById('locId').value = locationOptions[0].id;
             document.getElementById('sku').value = '';
-            document.getElementById('pallet').value = '0';
-            document.getElementById('carton').value = '0';
+            document.getElementById('subLoc').value = '0';
+            document.getElementById('qty').value = '0';
             document.getElementById('modalTitle').innerText = 'Them Inventory';
             modal.style.display = 'block';
         }
@@ -215,8 +213,8 @@
             document.getElementById('inventoryId').value = item.id;
             document.getElementById('locId').value = item.loc_id;
             document.getElementById('sku').value = item.sku || '';
-            document.getElementById('pallet').value = item.pallet || 0;
-            document.getElementById('carton').value = item.carton || 0;
+            document.getElementById('subLoc').value = item.sub_loc || 0;
+            document.getElementById('qty').value = item.qty || 0;
             document.getElementById('modalTitle').innerText = 'Sua Inventory';
             modal.style.display = 'block';
         }
@@ -234,8 +232,8 @@
             const id = document.getElementById('inventoryId').value;
             const loc_id = document.getElementById('locId').value;
             const sku = document.getElementById('sku').value.trim();
-            const pallet = document.getElementById('pallet').value;
-            const carton = document.getElementById('carton').value;
+            const sub_loc = document.getElementById('subLoc').value;
+            const qty = document.getElementById('qty').value;
 
             if (!loc_id) {
                 alert('Vui long chon Location');
@@ -249,7 +247,7 @@
             fetch('/api/invetory_whs/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({id, loc_id, sku, pallet, carton})
+                body: JSON.stringify({id, loc_id, sku, sub_loc, qty})
             }).then(r => r.json()).then(data => {
                 if (data.success) {
                     closeModal();

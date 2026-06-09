@@ -949,8 +949,8 @@ def get_invetory_whs_list():
     try:
         rows = (
             db.session.query(InventoryWhs, Location)
-            .outerjoin(Location, InventoryWhs.loc_id == Location.id)
-            .order_by(InventoryWhs.time_update.desc(), InventoryWhs.id.desc())
+            .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
+            .order_by(InventoryWhs.id.desc())
             .all()
         )
         data = []
@@ -958,12 +958,11 @@ def get_invetory_whs_list():
             data.append({
                 'id': item.id,
                 'loc_id': item.loc_id,
-                'location_code': location.loc_id if location else '',
+                'location_code': item.loc_id or '',
                 'location_description': location.description if location else '',
                 'sku': item.sku or '',
-                'pallet': item.pallet if item.pallet is not None else 0,
-                'carton': item.carton if item.carton is not None else 0,
-                'time_update': item.time_update.strftime('%H:%M:%S %d/%m/%Y') if item.time_update else ''
+                'sub_loc': item.sub_loc if item.sub_loc is not None else 0,
+                'qty': item.qty if item.qty is not None else 0
             })
 
         locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
@@ -994,10 +993,10 @@ def save_invetory_whs():
 
     data = request.json or {}
     item_id = data.get('id')
-    loc_id = data.get('loc_id')
+    loc_id = (data.get('loc_id') or '').strip()
     sku = (data.get('sku') or '').strip()
-    pallet = data.get('pallet')
-    carton = data.get('carton')
+    sub_loc = data.get('sub_loc')
+    qty = data.get('qty')
 
     if not loc_id:
         return jsonify({'success': False, 'message': 'Location is required'}), 400
@@ -1005,13 +1004,12 @@ def save_invetory_whs():
         return jsonify({'success': False, 'message': 'SKU is required'}), 400
 
     try:
-        loc_id = int(loc_id)
-        pallet = int(pallet or 0)
-        carton = int(carton or 0)
+        sub_loc = int(sub_loc or 0)
+        qty = int(qty or 0)
     except (TypeError, ValueError):
-        return jsonify({'success': False, 'message': 'Location, pallet and carton must be numbers'}), 400
+        return jsonify({'success': False, 'message': 'Sub location and quantity must be numbers'}), 400
 
-    if not Location.query.get(loc_id):
+    if not Location.query.filter_by(loc_id=loc_id).first():
         return jsonify({'success': False, 'message': 'Location not found'}), 404
 
     try:
@@ -1025,9 +1023,8 @@ def save_invetory_whs():
 
         item.loc_id = loc_id
         item.sku = sku
-        item.pallet = pallet
-        item.carton = carton
-        item.time_update = datetime.now()
+        item.sub_loc = sub_loc
+        item.qty = qty
 
         db.session.commit()
         return jsonify({'success': True})
@@ -1070,7 +1067,7 @@ def get_scan_sku_location_options():
         locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
         data = [
             {
-                'id': loc.id,
+                'id': loc.loc_id or '',
                 'loc_id': loc.loc_id or '',
                 'description': loc.description or ''
             }
@@ -1086,27 +1083,32 @@ def update_scan_sku_location():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
     data = request.json or {}
-    loc_id = data.get('loc_id')
+    loc_id = (data.get('loc_id') or '').strip()
     barcode = (data.get('barcode') or '').strip()
-    carton = data.get('carton')
+    sub_location = data.get('sub_location', data.get('sub_loc'))
+    qty = data.get('qty', data.get('carton'))
 
     if not loc_id:
         return jsonify({'success': False, 'message': 'Location is required'}), 400
     if not barcode:
         return jsonify({'success': False, 'message': 'Barcode is required'}), 400
+    if sub_location in (None, ''):
+        return jsonify({'success': False, 'message': 'Sub location is required'}), 400
 
     try:
-        loc_id = int(loc_id)
-        carton = int(carton or 0)
+        sub_location = int(sub_location)
+        qty = int(qty or 0)
     except (TypeError, ValueError):
-        return jsonify({'success': False, 'message': 'Location and carton must be numbers'}), 400
+        return jsonify({'success': False, 'message': 'Sub location and quantity must be numbers'}), 400
 
-    if carton <= 0:
-        return jsonify({'success': False, 'message': 'Carton must be greater than 0'}), 400
+    if sub_location < 1 or sub_location > 10:
+        return jsonify({'success': False, 'message': 'Sub location must be between 1 and 10'}), 400
+    if qty <= 0:
+        return jsonify({'success': False, 'message': 'Quantity must be greater than 0'}), 400
     if len(barcode) < 6:
         return jsonify({'success': False, 'message': 'Barcode must have at least 6 characters'}), 400
 
-    location = Location.query.get(loc_id)
+    location = Location.query.filter_by(loc_id=loc_id).first()
     if not location:
         return jsonify({'success': False, 'message': 'Location not found'}), 404
 
@@ -1120,15 +1122,15 @@ def update_scan_sku_location():
         _refix_cache[refix_val] = sku
 
     try:
-        item = InventoryWhs.query.filter_by(loc_id=loc_id, sku=sku, pallet=1).first()
+        item = InventoryWhs.query.filter_by(loc_id=loc_id, sku=sku, sub_loc=sub_location).first()
         if item:
-            item.carton = (item.carton or 0) + carton
+            item.qty = (item.qty or 0) + qty
         else:
-            item = InventoryWhs(loc_id=loc_id, sku=sku, pallet=1, carton=carton)
+            item = InventoryWhs(loc_id=loc_id, sku=sku, sub_loc=sub_location, qty=qty)
             db.session.add(item)
 
-        item.time_update = datetime.now()
         db.session.commit()
+        updated_at = datetime.now()
 
         return jsonify({
             'success': True,
@@ -1138,10 +1140,12 @@ def update_scan_sku_location():
             'sku': sku,
             'loc_id': location.loc_id,
             'location_description': location.description or '',
-            'pallet': item.pallet,
-            'carton_added': carton,
-            'carton_total': item.carton,
-            'time_update': item.time_update.strftime('%H:%M:%S %d/%m/%Y') if item.time_update else ''
+            'sub_loc': item.sub_loc,
+            'qty_added': qty,
+            'qty_total': item.qty,
+            'carton_added': qty,
+            'carton_total': item.qty,
+            'time_update': updated_at.strftime('%H:%M:%S %d/%m/%Y')
         })
     except Exception as e:
         db.session.rollback()
@@ -1168,34 +1172,35 @@ def findsku_search():
             db.session.query(
                 InventoryWhs.loc_id,
                 InventoryWhs.sku,
-                InventoryWhs.pallet,
-                func.sum(InventoryWhs.carton).label('carton'),
-                func.max(InventoryWhs.time_update).label('time_update'),
+                InventoryWhs.sub_loc,
+                func.sum(InventoryWhs.qty).label('qty'),
                 Location.loc_id.label('location_code'),
                 Location.description.label('location_description')
             )
-            .outerjoin(Location, InventoryWhs.loc_id == Location.id)
+            .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
             .filter(InventoryWhs.sku.contains(sku, autoescape=True))
             .group_by(
                 InventoryWhs.loc_id,
                 InventoryWhs.sku,
-                InventoryWhs.pallet,
+                InventoryWhs.sub_loc,
                 Location.loc_id,
                 Location.description
             )
-            .order_by(Location.loc_id.asc(), InventoryWhs.pallet.asc())
+            .order_by(InventoryWhs.loc_id.asc(), InventoryWhs.sub_loc.asc())
             .all()
         )
 
         results = [
             {
                 'loc_id': row.loc_id,
-                'location_code': row.location_code or '',
+                'location_code': row.location_code or row.loc_id or '',
                 'location_description': row.location_description or '',
                 'sku': row.sku or '',
-                'pallet': row.pallet if row.pallet is not None else 0,
-                'carton': int(row.carton or 0),
-                'time_update': row.time_update.strftime('%H:%M:%S %d/%m/%Y') if row.time_update else ''
+                'sub_loc': row.sub_loc if row.sub_loc is not None else 0,
+                'qty': int(row.qty or 0),
+                'pallet': row.sub_loc if row.sub_loc is not None else 0,
+                'carton': int(row.qty or 0),
+                'time_update': ''
             }
             for row in rows
         ]
@@ -1204,7 +1209,8 @@ def findsku_search():
             'success': True,
             'sku': sku,
             'results': results,
-            'total_carton': sum(item['carton'] for item in results)
+            'total_qty': sum(item['qty'] for item in results),
+            'total_carton': sum(item['qty'] for item in results)
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500

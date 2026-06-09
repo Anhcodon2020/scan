@@ -60,7 +60,7 @@
         <div class="summary">
             <div class="summary-box"><span>SKU</span><strong id="summarySku">-</strong></div>
             <div class="summary-box"><span>Locations</span><strong id="summaryLocations">0</strong></div>
-            <div class="summary-box"><span>Total Carton</span><strong id="summaryCarton">0</strong></div>
+            <div class="summary-box"><span>Total Qty</span><strong id="summaryQty">0</strong></div>
         </div>
 
         <div class="table-wrap">
@@ -70,13 +70,12 @@
                         <th style="width: 160px;">Location</th>
                         <th>Description</th>
                         <th style="width: 180px;">SKU</th>
-                        <th style="width: 90px; text-align: right;">Pallet</th>
-                        <th style="width: 100px; text-align: right;">Carton</th>
-                        <th style="width: 170px;">Time Update</th>
+                        <th style="width: 90px; text-align: right;">Sub Loc</th>
+                        <th style="width: 100px; text-align: right;">Qty</th>
                     </tr>
                 </thead>
                 <tbody id="resultBody">
-                    <tr><td colspan="6" style="text-align: center;">Nhap SKU de tim location</td></tr>
+                    <tr><td colspan="5" style="text-align: center;">Nhap SKU de tim location</td></tr>
                 </tbody>
             </table>
         </div>
@@ -99,7 +98,7 @@
         }
 
         function setEmptyRow(message) {
-            resultBody.innerHTML = `<tr><td colspan="6" style="text-align: center;">${message}</td></tr>`;
+            resultBody.innerHTML = `<tr><td colspan="5" style="text-align: center;">${message}</td></tr>`;
         }
 
         function searchSku() {
@@ -126,7 +125,7 @@
 
                 document.getElementById('summarySku').textContent = data.sku;
                 document.getElementById('summaryLocations').textContent = data.results.length;
-                document.getElementById('summaryCarton').textContent = data.total_carton;
+                document.getElementById('summaryQty').textContent = data.total_qty;
 
                 if (data.results.length === 0) {
                     showStatus('info', 'Khong tim thay SKU khop voi noi dung da nhap');
@@ -142,9 +141,8 @@
                         <td><strong>${item.location_code || '-'}</strong></td>
                         <td>${item.location_description || '-'}</td>
                         <td>${item.sku}</td>
-                        <td style="text-align: right;">${item.pallet}</td>
-                        <td style="text-align: right; font-weight: 700;">${item.carton}</td>
-                        <td>${item.time_update || '-'}</td>
+                        <td style="text-align: right;">${item.sub_loc}</td>
+                        <td style="text-align: right; font-weight: 700;">${item.qty}</td>
                     `;
                     resultBody.appendChild(row);
                 });
