@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Pallet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #f4f6f9;
+            color: #273142;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+        .navbar-brand { font-weight: 700; letter-spacing: 0.4px; }
+        .page-shell { max-width: 1180px; }
+        .panel {
+            background: #fff;
+            border: 1px solid #e6eaf0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(20, 30, 50, 0.04);
+        }
+        .metric {
+            min-height: 118px;
+            border-left: 4px solid #0d6efd;
+        }
+        .metric.success { border-color: #198754; }
+        .metric.warning { border-color: #f0ad4e; }
+        .metric .label {
+            color: #667085;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .table thead th {
+            background: #f8f9fc;
+            color: #667085;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .empty-state {
+            min-height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667085;
+        }
+        .badge-soft {
+            background: #eef4ff;
+            color: #175cd3;
+            border: 1px solid #d1e0ff;
+        }
+    </style>
+</head>
+<body>
+{% raw %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-warehouse me-2"></i>WAREHOUSE SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/outbound">Outbound</a></li>
+                    <li class="nav-item"><a class="nav-link active" aria-current="page" href="/dashboarpallet">Dashboard Pallet</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/logout">Đăng xuất</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main id="app" class="container-fluid page-shell px-4 pb-5">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+            <div>
+                <h3 class="mb-1 fw-bold"><i class="fas fa-pallet me-2 text-primary"></i>Dashboard Pallet</h3>
+                <div class="text-muted">Chọn Job No đã có container để tính số pallet theo CBM và loại pallet trong outbound.</div>
+            </div>
+            <button class="btn btn-outline-primary" @click="fetchJobnos" :disabled="loading">
+                <i class="fas fa-rotate me-2"></i>Làm mới
+            </button>
+        </div>
+
+        <section class="panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6 col-lg-5">
+                    <label class="form-label fw-semibold text-secondary">Job No có số container</label>
+                    <select class="form-select" v-model="selectedJob" @change="loadSummary">
+                        <option value="">-- Chọn Job No --</option>
+                        <option v-for="job in jobnos" :key="job" :value="job">{{ job }}</option>
+                    </select>
+                </div>
+                <div class="col-md-6 col-lg-7">
+                    <div v-if="loading" class="text-muted">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Đang tải dữ liệu...
+                    </div>
+                    <div v-else-if="message" class="alert alert-warning py-2 mb-0">{{ message }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="panel metric p-3">
+                    <div class="label">Tổng CBM</div>
+                    <div class="value mt-2">{{ formatNumber(totalCbm) }}</div>
+                    <div class="text-muted mt-2">CBM cộng theo cột CBM trong outbound</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="panel metric success p-3">
+                    <div class="label">Tổng Pallet</div>
+                    <div class="value mt-2">{{ totalPallet }}</div>
+                    <div class="text-muted mt-2">Đã làm tròn lên theo từng loại pallet</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="panel metric warning p-3">
+                    <div class="label">CBM chưa mapping</div>
+                    <div class="value mt-2">{{ formatNumber(unknownCbm) }}</div>
+                    <div class="text-muted mt-2">Dòng outbound thiếu hoặc khác `kindpallet` 1m2, 1m6, 1m9</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-3 border-bottom">
+                <div class="fw-semibold">
+                    Chi tiết Job
+                    <span v-if="selectedJob" class="badge badge-soft ms-2">{{ selectedJob }}</span>
+                </div>
+                <div class="text-muted small">1m2 = CBM / 3, 1m6 = CBM / 4, 1m9 = CBM / 4.75</div>
+            </div>
+            <div v-if="rows.length" class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Loại pallet</th>
+                            <th class="text-end">Số dòng outbound</th>
+                            <th class="text-end">Tổng CBM</th>
+                            <th class="text-end">CBM / pallet</th>
+                            <th class="text-end">Pallet cần</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in rows" :key="row.kindpallet">
+                            <td class="fw-semibold">{{ row.kindpallet }}</td>
+                            <td class="text-end">{{ formatNumber(row.line_count, 0) }}</td>
+                            <td class="text-end">{{ formatNumber(row.total_cbm) }}</td>
+                            <td class="text-end">{{ row.capacity_cbm || '-' }}</td>
+                            <td class="text-end fw-bold text-success">{{ row.pallet_qty }}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td colspan="2">Tổng</td>
+                            <td class="text-end">{{ formatNumber(totalCbm) }}</td>
+                            <td></td>
+                            <td class="text-end text-success">{{ totalPallet }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div v-else class="empty-state text-center px-3">
+                <div>
+                    <i class="fas fa-table-list fa-2x mb-3 text-secondary"></i>
+                    <div>{{ selectedJob ? 'Không có dữ liệu phù hợp cho Job No này.' : 'Chọn Job No để xem dashboard pallet.' }}</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://unpkg.com/vue@3"></script>
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const jobnos = ref([]);
+                const selectedJob = ref('');
+                const rows = ref([]);
+                const totalCbm = ref(0);
+                const totalPallet = ref(0);
+                const unknownCbm = ref(0);
+                const loading = ref(false);
+                const message = ref('');
+
+                const fetchJobnos = async () => {
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch('/api/dashboard-pallet/jobnos');
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không lấy được danh sách Job No.');
+                        jobnos.value = data.jobnos || [];
+                        if (!jobnos.value.includes(selectedJob.value)) {
+                            selectedJob.value = '';
+                            clearSummary();
+                        }
+                        if (!jobnos.value.length) {
+                            message.value = 'Không có Job No nào đã có số container.';
+                        }
+                    } catch (err) {
+                        message.value = err.message || 'Lỗi kết nối máy chủ.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const clearSummary = () => {
+                    rows.value = [];
+                    totalCbm.value = 0;
+                    totalPallet.value = 0;
+                    unknownCbm.value = 0;
+                };
+
+                const loadSummary = async () => {
+                    clearSummary();
+                    if (!selectedJob.value) return;
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const url = `/api/dashboard-pallet/summary?jobno=${encodeURIComponent(selectedJob.value)}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không tải được dữ liệu.');
+                        rows.value = data.rows || [];
+                        totalCbm.value = Number(data.total_cbm || 0);
+                        totalPallet.value = Number(data.total_pallet || 0);
+                        unknownCbm.value = Number(data.unknown_cbm || 0);
+                        if (!rows.value.length) message.value = 'Không tìm thấy dữ liệu outbound cho Job No này.';
+                    } catch (err) {
+                        message.value = err.message || 'Lỗi kết nối máy chủ.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const formatNumber = (value, maxFrac = 3) => {
+                    const num = Number(value || 0);
+                    return num.toLocaleString('en-US', { maximumFractionDigits: maxFrac });
+                };
+
+                onMounted(fetchJobnos);
+
+                return {
+                    jobnos,
+                    selectedJob,
+                    rows,
+                    totalCbm,
+                    totalPallet,
+                    unknownCbm,
+                    loading,
+                    message,
+                    fetchJobnos,
+                    loadSummary,
+                    formatNumber
+                };
+            }
+        }).mount('#app');
+    </script>
+{% endraw %}
+</body>
+</html>

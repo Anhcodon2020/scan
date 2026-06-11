@@ -1465,6 +1465,12 @@ def outbound_page():
     if 'user' not in session: return redirect(url_for('login'))
     return render_template('outbound.html')
 
+@app.route('/dashboarpallet')
+@app.route('/dashboardpallet')
+def dashboard_pallet_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('dashboarpallet.html')
+
 @app.route('/api/outbound/jobnos')
 def outbound_jobnos():
     if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
@@ -1478,6 +1484,80 @@ def outbound_jobnos():
         rows = db.session.execute(query).fetchall()
         jobnos = [r[0] for r in rows if r[0]]
         return jsonify({'success': True, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/dashboard-pallet/jobnos')
+def dashboard_pallet_jobnos():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    try:
+        query = text("""
+            SELECT DISTINCT jobno
+            FROM outbound
+            WHERE container IS NOT NULL AND TRIM(container) != ''
+            ORDER BY jobno
+        """)
+        rows = db.session.execute(query).fetchall()
+        jobnos = [r[0] for r in rows if r[0]]
+        return jsonify({'success': True, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/dashboard-pallet/summary')
+def dashboard_pallet_summary():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    jobno = request.args.get('jobno')
+    if not jobno:
+        return jsonify({'success': False, 'message': 'Thieu Job No'}), 400
+
+    capacity_map = {'1.2': 3, '1m2': 3, '1.6': 4, '1m6': 4, '1.9': 4.75, '1m9': 4.75}
+    try:
+        query = text("""
+            SELECT
+                COALESCE(TRIM(kindpallet), '') AS kindpallet,
+                COUNT(*) AS line_count,
+                SUM(COALESCE(cbm, 0)) AS total_cbm
+            FROM outbound
+            WHERE jobno = :jobno
+              AND container IS NOT NULL
+              AND TRIM(container) != ''
+            GROUP BY COALESCE(TRIM(kindpallet), '')
+            ORDER BY COALESCE(TRIM(kindpallet), '')
+        """)
+        rows = db.session.execute(query, {'jobno': jobno}).fetchall()
+
+        details = []
+        grand_cbm = 0
+        grand_pallet = 0
+        unknown_cbm = 0
+
+        for kindpallet, line_count, total_cbm in rows:
+            kind = str(kindpallet or '').strip()
+            cbm_value = round(float(total_cbm or 0), 3)
+            divisor = capacity_map.get(kind)
+            pallet_qty = int(-(-cbm_value // divisor)) if divisor and cbm_value > 0 else 0
+
+            if not divisor:
+                unknown_cbm = round(unknown_cbm + cbm_value, 3)
+            grand_cbm = round(grand_cbm + cbm_value, 3)
+            grand_pallet += pallet_qty
+
+            details.append({
+                'kindpallet': kind or 'Chua co loai',
+                'line_count': int(line_count or 0),
+                'total_cbm': cbm_value,
+                'capacity_cbm': divisor or '',
+                'pallet_qty': pallet_qty
+            })
+
+        return jsonify({
+            'success': True,
+            'jobno': jobno,
+            'rows': details,
+            'total_cbm': grand_cbm,
+            'total_pallet': grand_pallet,
+            'unknown_cbm': unknown_cbm
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

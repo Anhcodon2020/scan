@@ -349,6 +349,14 @@
             </a>
             {% endif %}
 
+            <!-- Dashboard Pallet: tinh pallet theo CBM va kindpallet -->
+            {% if session.get('role') in ['admin', 'Docs', 'printer', 'scanner'] %}
+            <a href="/dashboarpallet" class="card" style="border-color: #198754;">
+                <div class="card-icon" style="color: #198754; background-color: rgba(25, 135, 84, 0.1);"><i class="fas fa-pallet"></i></div>
+                <h3>Dashboard Pallet</h3>
+                <p>Tinh so pallet can theo CBM va loai pallet</p>
+            </a>
+            {% endif %}
             <!-- Chức năng Sửa Pallet Type: Dành cho admin và scanner -->
             {% if session.get('role') in ['admin', 'scanner'] %}
             <a href="/edit_pallet_type" class="card" style="border-color: #fd7e14;">
