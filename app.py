@@ -1444,13 +1444,13 @@ def search_outbound():
     if not jobno: return jsonify({'success': False, 'message': 'Thiếu Job No'})
     
     try:
-        # Tìm container trong bảng outbound, sắp xếp theo ngày (dùng datercv hoặc datestuff nếu có)
+        # Tìm container trong bảng outbound, sắp xếp theo ngày đóng hàng từ cột datestuff.
         query = text("""
             SELECT DISTINCT container,
-                COALESCE(datercv, datestuff) AS packing_date
+                datestuff AS packing_date
             FROM outbound
             WHERE jobno = :jobno AND container IS NOT NULL AND container != ''
-            ORDER BY packing_date ASC
+            ORDER BY packing_date DESC
         """)
         result = db.session.execute(query, {'jobno': jobno}).fetchall()
         
@@ -1490,16 +1490,44 @@ def outbound_jobnos():
 @app.route('/api/dashboard-pallet/jobnos')
 def dashboard_pallet_jobnos():
     if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    packing_date = request.args.get('packing_date')
     try:
+        params = {}
+        packing_date_filter = ''
+        if packing_date:
+            params['packing_date'] = packing_date
+            packing_date_filter = "AND DATE(datestuff) = :packing_date"
+
         query = text("""
             SELECT DISTINCT jobno
             FROM outbound
-            WHERE container IS NOT NULL AND TRIM(container) != ''
+            WHERE container IS NOT NULL
+              AND TRIM(container) != ''
+              {packing_date_filter}
             ORDER BY jobno
+        """.format(packing_date_filter=packing_date_filter))
+        rows = db.session.execute(query, params).fetchall()
+        jobnos = [r[0] for r in rows if r[0]]
+        return jsonify({'success': True, 'packing_date': packing_date or '', 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/dashboard-pallet/packing-dates')
+def dashboard_pallet_packing_dates():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        query = text("""
+            SELECT DISTINCT DATE(datestuff) AS packing_date
+            FROM outbound
+            WHERE container IS NOT NULL
+              AND TRIM(container) != ''
+              AND datestuff IS NOT NULL
+            ORDER BY packing_date DESC
         """)
         rows = db.session.execute(query).fetchall()
-        jobnos = [r[0] for r in rows if r[0]]
-        return jsonify({'success': True, 'jobnos': jobnos})
+        packing_dates = [str(r[0]) for r in rows if r[0]]
+        return jsonify({'success': True, 'packing_dates': packing_dates})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -1507,11 +1535,18 @@ def dashboard_pallet_jobnos():
 def dashboard_pallet_summary():
     if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
     jobno = request.args.get('jobno')
+    packing_date = request.args.get('packing_date')
     if not jobno:
         return jsonify({'success': False, 'message': 'Thieu Job No'}), 400
 
     capacity_map = {'1.2': 3, '1m2': 3, '1.6': 4, '1m6': 4, '1.9': 4.75, '1m9': 4.75}
     try:
+        params = {'jobno': jobno}
+        packing_date_filter = ''
+        if packing_date:
+            params['packing_date'] = packing_date
+            packing_date_filter = "AND DATE(datestuff) = :packing_date"
+
         query = text("""
             SELECT
                 COALESCE(TRIM(kindpallet), '') AS kindpallet,
@@ -1521,10 +1556,11 @@ def dashboard_pallet_summary():
             WHERE jobno = :jobno
               AND container IS NOT NULL
               AND TRIM(container) != ''
+              {packing_date_filter}
             GROUP BY COALESCE(TRIM(kindpallet), '')
             ORDER BY COALESCE(TRIM(kindpallet), '')
-        """)
-        rows = db.session.execute(query, {'jobno': jobno}).fetchall()
+        """.format(packing_date_filter=packing_date_filter))
+        rows = db.session.execute(query, params).fetchall()
 
         details = []
         grand_cbm = 0
@@ -1553,6 +1589,7 @@ def dashboard_pallet_summary():
         return jsonify({
             'success': True,
             'jobno': jobno,
+            'packing_date': packing_date or '',
             'rows': details,
             'total_cbm': grand_cbm,
             'total_pallet': grand_pallet,

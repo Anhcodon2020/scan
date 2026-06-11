@@ -80,25 +80,35 @@
         <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
             <div>
                 <h3 class="mb-1 fw-bold"><i class="fas fa-pallet me-2 text-primary"></i>Dashboard Pallet</h3>
-                <div class="text-muted">Chọn Job No đã có container để tính số pallet theo CBM và loại pallet trong outbound.</div>
+                <div class="text-muted">Chọn ngày đóng hàng để xem các Job No đã có container trong ngày đó.</div>
             </div>
-            <button class="btn btn-outline-primary" @click="fetchJobnos" :disabled="loading">
+            <button class="btn btn-outline-primary" @click="refreshFilters" :disabled="loading || loadingDates">
                 <i class="fas fa-rotate me-2"></i>Làm mới
             </button>
         </div>
 
         <section class="panel p-3 mb-3">
             <div class="row g-3 align-items-end">
-                <div class="col-md-6 col-lg-5">
+                <div class="col-md-6 col-lg-4">
+                    <label class="form-label fw-semibold text-secondary">Ngày đóng hàng</label>
+                    <select class="form-select" v-model="selectedPackingDate" @change="handlePackingDateChange" :disabled="loadingDates">
+                        <option value="">-- Chọn ngày đóng hàng --</option>
+                        <option v-for="date in packingDates" :key="date" :value="date">{{ formatDate(date) }}</option>
+                    </select>
+                </div>
+                <div class="col-md-6 col-lg-4">
                     <label class="form-label fw-semibold text-secondary">Job No có số container</label>
-                    <select class="form-select" v-model="selectedJob" @change="loadSummary">
+                    <select class="form-select" v-model="selectedJob" @change="loadSummary" :disabled="!selectedPackingDate || loading">
                         <option value="">-- Chọn Job No --</option>
                         <option v-for="job in jobnos" :key="job" :value="job">{{ job }}</option>
                     </select>
                 </div>
-                <div class="col-md-6 col-lg-7">
+                <div class="col-md-12 col-lg-4">
                     <div v-if="loading" class="text-muted">
                         <span class="spinner-border spinner-border-sm me-2" role="status"></span>Đang tải dữ liệu...
+                    </div>
+                    <div v-else-if="loadingDates" class="text-muted">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Đang tải ngày đóng hàng...
                     </div>
                     <div v-else-if="message" class="alert alert-warning py-2 mb-0">{{ message }}</div>
                 </div>
@@ -170,7 +180,7 @@
             <div v-else class="empty-state text-center px-3">
                 <div>
                     <i class="fas fa-table-list fa-2x mb-3 text-secondary"></i>
-                    <div>{{ selectedJob ? 'Không có dữ liệu phù hợp cho Job No này.' : 'Chọn Job No để xem dashboard pallet.' }}</div>
+                    <div>{{ selectedJob ? 'Không có dữ liệu phù hợp cho Job No này.' : 'Chọn ngày đóng hàng rồi chọn Job No để xem dashboard pallet.' }}</div>
                 </div>
             </div>
         </section>
@@ -184,18 +194,28 @@
             setup() {
                 const jobnos = ref([]);
                 const selectedJob = ref('');
+                const packingDates = ref([]);
+                const selectedPackingDate = ref('');
                 const rows = ref([]);
                 const totalCbm = ref(0);
                 const totalPallet = ref(0);
                 const unknownCbm = ref(0);
                 const loading = ref(false);
+                const loadingDates = ref(false);
                 const message = ref('');
 
                 const fetchJobnos = async () => {
+                    if (!selectedPackingDate.value) {
+                        jobnos.value = [];
+                        selectedJob.value = '';
+                        clearSummary();
+                        return;
+                    }
                     loading.value = true;
                     message.value = '';
                     try {
-                        const res = await fetch('/api/dashboard-pallet/jobnos');
+                        const url = `/api/dashboard-pallet/jobnos?packing_date=${encodeURIComponent(selectedPackingDate.value)}`;
+                        const res = await fetch(url);
                         const data = await res.json();
                         if (!data.success) throw new Error(data.message || 'Không lấy được danh sách Job No.');
                         jobnos.value = data.jobnos || [];
@@ -204,7 +224,7 @@
                             clearSummary();
                         }
                         if (!jobnos.value.length) {
-                            message.value = 'Không có Job No nào đã có số container.';
+                            message.value = 'Không có Job No nào có số container trong ngày đóng hàng này.';
                         }
                     } catch (err) {
                         message.value = err.message || 'Lỗi kết nối máy chủ.';
@@ -220,13 +240,48 @@
                     unknownCbm.value = 0;
                 };
 
+                const handlePackingDateChange = async () => {
+                    selectedJob.value = '';
+                    jobnos.value = [];
+                    clearSummary();
+                    if (!selectedPackingDate.value) return;
+                    await fetchJobnos();
+                };
+
+                const fetchPackingDates = async () => {
+                    loadingDates.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch('/api/dashboard-pallet/packing-dates');
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không lấy được ngày đóng hàng.');
+                        packingDates.value = data.packing_dates || [];
+                        if (!packingDates.value.includes(selectedPackingDate.value)) {
+                            selectedPackingDate.value = '';
+                            selectedJob.value = '';
+                            jobnos.value = [];
+                            clearSummary();
+                        }
+                        if (!packingDates.value.length) {
+                            message.value = 'Không có ngày đóng hàng nào đã có số container.';
+                        }
+                    } catch (err) {
+                        message.value = err.message || 'Lỗi kết nối máy chủ.';
+                    } finally {
+                        loadingDates.value = false;
+                    }
+                };
+
                 const loadSummary = async () => {
                     clearSummary();
                     if (!selectedJob.value) return;
                     loading.value = true;
                     message.value = '';
                     try {
-                        const url = `/api/dashboard-pallet/summary?jobno=${encodeURIComponent(selectedJob.value)}`;
+                        let url = `/api/dashboard-pallet/summary?jobno=${encodeURIComponent(selectedJob.value)}`;
+                        if (selectedPackingDate.value) {
+                            url += `&packing_date=${encodeURIComponent(selectedPackingDate.value)}`;
+                        }
                         const res = await fetch(url);
                         const data = await res.json();
                         if (!data.success) throw new Error(data.message || 'Không tải được dữ liệu.');
@@ -247,20 +302,39 @@
                     return num.toLocaleString('en-US', { maximumFractionDigits: maxFrac });
                 };
 
-                onMounted(fetchJobnos);
+                const formatDate = (value) => {
+                    if (!value) return '';
+                    const parts = String(value).split('-');
+                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    return value;
+                };
+
+                const refreshFilters = async () => {
+                    await fetchPackingDates();
+                    if (selectedPackingDate.value) await fetchJobnos();
+                };
+
+                onMounted(fetchPackingDates);
 
                 return {
                     jobnos,
                     selectedJob,
+                    packingDates,
+                    selectedPackingDate,
                     rows,
                     totalCbm,
                     totalPallet,
                     unknownCbm,
                     loading,
+                    loadingDates,
                     message,
                     fetchJobnos,
+                    fetchPackingDates,
+                    refreshFilters,
+                    handlePackingDateChange,
                     loadSummary,
-                    formatNumber
+                    formatNumber,
+                    formatDate
                 };
             }
         }).mount('#app');
