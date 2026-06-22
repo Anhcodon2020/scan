@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forecast Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --ink: #111827;
+            --muted: #6b7280;
+            --line: #111827;
+            --blue: #0d6efd;
+            --green: #198754;
+            --amber: #d97706;
+        }
+
+        body { background: #eef2f7; color: var(--ink); font-family: "Segoe UI", Arial, sans-serif; }
+        .navbar-brand { font-weight: 700; letter-spacing: 0.4px; }
+        .page-shell { max-width: 1400px; }
+        .dashboard-panel { background: #fff; border: 1px solid #d8dee9; border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); overflow: hidden; }
+        .metric { background: #fff; border: 1px solid #d8dee9; border-left: 4px solid var(--blue); border-radius: 8px; min-height: 94px; }
+        .metric.actual { border-left-color: var(--green); }
+        .metric.ratio { border-left-color: var(--amber); }
+        .metric-label { color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+        .metric-value { font-size: 1.55rem; font-weight: 800; line-height: 1.1; }
+        .forecast-table-wrap { overflow-x: auto; }
+        .forecast-table { min-width: 1120px; table-layout: fixed; border-collapse: collapse; margin: 0; }
+        .forecast-table th, .forecast-table td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: middle; }
+        .forecast-table th { background: #fff; font-size: 1rem; font-weight: 500; text-align: left; white-space: nowrap; }
+        .forecast-table td { height: 44px; background: #fff; font-size: 1rem; }
+        .row-label { width: 96px; font-weight: 500; text-align: left; }
+        .week-cell { width: 128px; }
+        .date-cell { color: #000; font-weight: 400; }
+        .value-cell { font-weight: 700; text-align: right; }
+        .forecast-value { color: #1d4ed8; }
+        .actual-value { color: #15803d; }
+        .ratio-value { color: #b45309; }
+        .current-week-col { background: #eff6ff !important; box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.45); }
+        .detail-table th { background: #f8fafc; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; white-space: nowrap; }
+        .empty-state { min-height: 160px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+        @media (max-width: 768px) {
+            .page-shell { padding-left: 12px !important; padding-right: 12px !important; }
+            .metric-value { font-size: 1.35rem; }
+        }
+    </style>
+</head>
+<body>
+{% raw %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-chart-line me-2"></i>WAREHOUSE SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">Trang chu</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/outbound">Outbound</a></li>
+                    <li class="nav-item"><a class="nav-link active" aria-current="page" href="/forecast">Forecast</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/logout">Dang xuat</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main id="app" class="container-fluid page-shell px-4 pb-5">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+            <div>
+                <h3 class="mb-1 fw-bold"><i class="fas fa-table me-2 text-primary"></i>Forecast Dashboard</h3>
+                <div class="text-muted">Dashboard theo 8 tuan lien tiep, bat dau tu tuan hien tai va sum theo CBM.</div>
+            </div>
+            <button class="btn btn-outline-primary" @click="loadForecast" :disabled="loading">
+                <i class="fas fa-rotate me-2"></i>Lam moi
+            </button>
+        </div>
+
+        <div v-if="message" class="alert alert-warning py-2">{{ message }}</div>
+
+        <section class="row g-3 mb-3">
+            <div class="col-md-6 col-lg-3">
+                <div class="metric p-3">
+                    <div class="metric-label">Khoang ngay</div>
+                    <div class="metric-value mt-2 fs-5">{{ displayRange }}</div>
+                    <div class="text-muted small mt-2">Cap nhat: {{ generatedAt || '-' }}</div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="metric p-3">
+                    <div class="metric-label">Forecast CBM</div>
+                    <div class="metric-value mt-2 forecast-value">{{ formatNumber(grandTotal.total_cbm) }}</div>
+                    <div class="text-muted small mt-2">Tong CBM forecast</div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="metric actual p-3">
+                    <div class="metric-label">Actual CBM</div>
+                    <div class="metric-value mt-2 actual-value">{{ formatNumber(grandTotal.actual_cbm) }}</div>
+                    <div class="text-muted small mt-2">Tong CBM thuc nhan</div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="metric ratio p-3">
+                    <div class="metric-label">Ratio</div>
+                    <div class="metric-value mt-2 ratio-value">{{ formatPercent(grandTotal.cbm_ratio) }}</div>
+                    <div class="text-muted small mt-2">Actual / Forecast</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div v-if="loading" class="empty-state">
+                <div><span class="spinner-border spinner-border-sm me-2"></span>Dang tai forecast...</div>
+            </div>
+
+            <div v-else-if="weeks.length" class="forecast-table-wrap">
+                <table class="forecast-table">
+                    <tbody>
+                        <tr>
+                            <th class="row-label">Week</th>
+                            <th v-for="week in weeks" :key="week.key" class="week-cell" :class="{ 'current-week-col': week.is_current }">
+                                {{ week.iso_label }}
+                            </th>
+                        </tr>
+                        <tr>
+                            <td class="row-label"></td>
+                            <td v-for="week in weeks" :key="week.key + '-date'" class="date-cell" :class="{ 'current-week-col': week.is_current }">
+                                {{ week.range_label }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="row-label">Forecast</td>
+                            <td v-for="week in weeks" :key="week.key + '-forecast'" class="value-cell forecast-value" :class="{ 'current-week-col': week.is_current }">
+                                {{ formatNumber(week.total_cbm) }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="row-label">Actual</td>
+                            <td v-for="week in weeks" :key="week.key + '-actual'" class="value-cell actual-value" :class="{ 'current-week-col': week.is_current }">
+                                {{ formatNumber(week.actual_cbm) }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="row-label">Ratio (%)</td>
+                            <td v-for="week in weeks" :key="week.key + '-ratio'" class="value-cell ratio-value" :class="{ 'current-week-col': week.is_current }">
+                                {{ formatNumber(week.cbm_ratio, 1) }}%
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div v-else class="empty-state">
+                <div>Khong co du lieu forecast trong khoang tuan hien tai.</div>
+            </div>
+        </section>
+
+        <section v-if="weeks.length" class="dashboard-panel mt-3 p-3">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div>
+                    <h5 class="fw-bold mb-1">Chi tiet theo tuan</h5>
+                    <div class="text-muted small">Bao gom carton, CBM, PO va item cho tung tuan.</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle detail-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Week</th>
+                            <th>Date</th>
+                            <th class="text-end">Forecast Carton</th>
+                            <th class="text-end">Forecast CBM</th>
+                            <th class="text-end">Actual Carton</th>
+                            <th class="text-end">Actual CBM</th>
+                            <th class="text-end">Ratio Carton</th>
+                            <th class="text-end">Ratio CBM</th>
+                            <th class="text-end">PO</th>
+                            <th class="text-end">Item</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="week in weeks" :key="week.key + '-detail'">
+                            <td class="fw-semibold">{{ week.iso_label }}</td>
+                            <td>{{ week.range_label }}</td>
+                            <td class="text-end forecast-value fw-semibold">{{ formatNumber(week.total_qty, 0) }}</td>
+                            <td class="text-end">{{ formatNumber(week.total_cbm) }}</td>
+                            <td class="text-end actual-value fw-semibold">{{ formatNumber(week.actual_carton, 0) }}</td>
+                            <td class="text-end">{{ formatNumber(week.actual_cbm) }}</td>
+                            <td class="text-end ratio-value fw-semibold">{{ formatPercent(week.carton_ratio) }}</td>
+                            <td class="text-end">{{ formatPercent(week.cbm_ratio) }}</td>
+                            <td class="text-end">{{ formatNumber(week.po_count, 0) }}</td>
+                            <td class="text-end">{{ formatNumber(week.item_count, 0) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://unpkg.com/vue@3"></script>
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const weeks = ref([]);
+                const loading = ref(false);
+                const message = ref('');
+                const generatedAt = ref('');
+                let refreshTimer = null;
+
+                const loadForecast = async () => {
+                    loading.value = true;
+                    message.value = '';
+                    try {
+                        const res = await fetch('/api/forecast');
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Khong tai duoc du lieu forecast.');
+                        generatedAt.value = data.generated_at || '';
+                        weeks.value = normalizeWeeks(data.weeks || flattenWeeks(data.months || []));
+                    } catch (err) {
+                        message.value = err.message || 'Loi ket noi may chu.';
+                        weeks.value = [];
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const normalizeWeeks = (rows) => rows.map((week, index) => {
+                    const totalQty = Number(week.total_qty || 0);
+                    const actualCarton = Number(week.actual_carton || 0);
+                    const totalCbm = Number(week.total_cbm || 0);
+                    const actualCbm = Number(week.actual_cbm || 0);
+                    return {
+                        ...week,
+                        key: week.key || `${week.start_date}-${index}`,
+                        iso_label: week.iso_label || getIsoWeekLabel(week.start_date),
+                        range_label: week.range_label || `${formatShortDate(week.start_date)} - ${formatShortDate(week.end_date)}`,
+                        carton_ratio: totalQty ? (actualCarton / totalQty * 100) : 0,
+                        cbm_ratio: totalCbm ? (actualCbm / totalCbm * 100) : 0
+                    };
+                }).slice(0, 8);
+
+                const flattenWeeks = (months) => {
+                    return months.flatMap(month => month.weeks || []);
+                };
+
+                const grandTotal = computed(() => {
+                    const totals = weeks.value.reduce((acc, week) => {
+                        acc.total_qty += Number(week.total_qty || 0);
+                        acc.total_cbm += Number(week.total_cbm || 0);
+                        acc.actual_carton += Number(week.actual_carton || 0);
+                        acc.actual_cbm += Number(week.actual_cbm || 0);
+                        return acc;
+                    }, { total_qty: 0, total_cbm: 0, actual_carton: 0, actual_cbm: 0, carton_ratio: 0, cbm_ratio: 0 });
+                    totals.carton_ratio = totals.total_qty ? (totals.actual_carton / totals.total_qty * 100) : 0;
+                    totals.cbm_ratio = totals.total_cbm ? (totals.actual_cbm / totals.total_cbm * 100) : 0;
+                    return totals;
+                });
+
+                const displayRange = computed(() => {
+                    if (!weeks.value.length) return '-';
+                    const first = weeks.value[0].range_label.split(' - ')[0];
+                    const last = weeks.value[weeks.value.length - 1].range_label.split(' - ')[1];
+                    return `${first} - ${last}`;
+                });
+
+                const formatNumber = (value, maxFrac = 3) => {
+                    const num = Number(value || 0);
+                    return num.toLocaleString('en-US', { maximumFractionDigits: maxFrac });
+                };
+
+                const formatPercent = (value) => {
+                    return `${formatNumber(value, 1)}%`;
+                };
+
+                const formatShortDate = (value) => {
+                    if (!value) return '';
+                    const date = parseDate(value);
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'July', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    return `${date.getDate()} ${months[date.getMonth()]}`;
+                };
+
+                const parseDate = (value) => {
+                    const [year, month, day] = String(value).split('-').map(Number);
+                    return new Date(year, month - 1, day);
+                };
+
+                const getIsoWeekLabel = (value) => {
+                    if (!value) return '';
+                    const date = parseDate(value);
+                    date.setHours(0, 0, 0, 0);
+                    date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+                    const week1 = new Date(date.getFullYear(), 0, 4);
+                    const weekNo = 1 + Math.round((((date - week1) / 86400000) - 3 + ((week1.getDay() + 6) % 7)) / 7);
+                    return `W${String(weekNo).padStart(2, '0')}`;
+                };
+
+                onMounted(() => {
+                    loadForecast();
+                    refreshTimer = setInterval(loadForecast, 15 * 60 * 1000);
+                });
+
+                onUnmounted(() => {
+                    if (refreshTimer) clearInterval(refreshTimer);
+                });
+
+                return {
+                    weeks,
+                    loading,
+                    message,
+                    generatedAt,
+                    grandTotal,
+                    displayRange,
+                    loadForecast,
+                    formatNumber,
+                    formatPercent
+                };
+            }
+        }).mount('#app');
+    </script>
+{% endraw %}
+</body>
+</html>

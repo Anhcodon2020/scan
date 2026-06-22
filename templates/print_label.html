@@ -417,14 +417,14 @@
             }
 
             // Tính Pallet Tare Weight theo yêu cầu
-            // Logic: 1.2 -> 17kg, 1.6 -> 22kg, 1.9 -> 25kg
+            // Logic: 1.2 -> 15.5kg, 1.6 -> 20.5kg, 1.9 -> 22kg
             const pType = String(item.pallet_type || '');
             if (pType.includes('1.2')) {
-                palletTare = 17;
+                palletTare = 15.5;
             } else if (pType.includes('1.6')) {
-                palletTare = 22;
+                palletTare = 20.5;
             } else if (pType.includes('1.9')) {
-                palletTare = 25;
+                palletTare = 22;
             } else {
                 // Mặc định nếu không khớp (hoặc có thể để 0)
                 palletTare = 0; 

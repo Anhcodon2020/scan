@@ -1471,6 +1471,292 @@ def dashboard_pallet_page():
     if 'user' not in session: return redirect(url_for('login'))
     return render_template('dashboarpallet.html')
 
+@app.route('/forecast')
+def forecast_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('forecast.html')
+
+@app.route('/api/forecast')
+def forecast_data():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    today = datetime.now().date()
+    forecast_start = today - timedelta(days=today.weekday())
+    forecast_end = forecast_start + timedelta(weeks=8)
+    current_month_start = today.replace(day=1)
+    next_month_start = (current_month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    after_next_month_start = (next_month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    month_names = [
+        'Thang 1', 'Thang 2', 'Thang 3', 'Thang 4', 'Thang 5', 'Thang 6',
+        'Thang 7', 'Thang 8', 'Thang 9', 'Thang 10', 'Thang 11', 'Thang 12'
+    ]
+    display_month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'July', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    weekdays = ['Thu 2', 'Thu 3', 'Thu 4', 'Thu 5', 'Thu 6', 'Thu 7', 'Chu nhat']
+
+    def month_end(month_start):
+        return (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+    def to_float(value):
+        return round(float(value or 0), 3)
+
+    try:
+        daily_query = text("""
+            SELECT
+                DATE(deliverydate) AS delivery_day,
+                COUNT(*) AS line_count,
+                COUNT(DISTINCT po) AS po_count,
+                COUNT(DISTINCT item) AS item_count,
+                SUM(COALESCE(qty, 0)) AS total_qty,
+                SUM(
+                    CASE
+                        WHEN total_cbm IS NOT NULL AND total_cbm <> 0 THEN total_cbm
+                        ELSE COALESCE(cbm, 0) * COALESCE(qty, 0)
+                    END
+                ) AS total_cbm
+            FROM bbrreport
+            WHERE deliverydate >= :start_date
+              AND deliverydate < :end_date
+            GROUP BY DATE(deliverydate)
+        """)
+        detail_query = text("""
+            SELECT
+                DATE(deliverydate) AS delivery_day,
+                COALESCE(origin, '') AS origin,
+                COALESCE(supplier, '') AS supplier,
+                COALESCE(parentpo, '') AS parentpo,
+                COALESCE(po, '') AS po,
+                COALESCE(hub_DC, '') AS hub_dc,
+                COUNT(DISTINCT item) AS item_count,
+                SUM(COALESCE(qty, 0)) AS total_qty,
+                SUM(
+                    CASE
+                        WHEN total_cbm IS NOT NULL AND total_cbm <> 0 THEN total_cbm
+                        ELSE COALESCE(cbm, 0) * COALESCE(qty, 0)
+                    END
+                ) AS total_cbm
+            FROM bbrreport
+            WHERE deliverydate >= :start_date
+              AND deliverydate < :end_date
+            GROUP BY DATE(deliverydate), origin, supplier, parentpo, po, hub_DC
+            ORDER BY DATE(deliverydate), supplier, parentpo, po
+        """)
+        inbound_query = text("""
+            SELECT
+                DATE(datercv) AS receive_day,
+                SUM(COALESCE(carton, 0)) AS actual_carton,
+                SUM(COALESCE(cbm, 0)) AS actual_cbm
+            FROM inbound
+            WHERE datercv >= :start_date
+              AND datercv < :end_date
+            GROUP BY DATE(datercv)
+        """)
+        params = {'start_date': forecast_start, 'end_date': forecast_end}
+        daily_rows = db.session.execute(daily_query, params).fetchall()
+        detail_rows = db.session.execute(detail_query, params).fetchall()
+        inbound_rows = db.session.execute(inbound_query, params).fetchall()
+
+        daily_map = {}
+        for row in daily_rows:
+            delivery_day = row.delivery_day.isoformat() if hasattr(row.delivery_day, 'isoformat') else str(row.delivery_day)
+            daily_map[delivery_day] = {
+                'line_count': int(row.line_count or 0),
+                'po_count': int(row.po_count or 0),
+                'item_count': int(row.item_count or 0),
+                'total_qty': int(row.total_qty or 0),
+                'total_cbm': to_float(row.total_cbm)
+            }
+
+        inbound_map = {}
+        for row in inbound_rows:
+            receive_day = row.receive_day.isoformat() if hasattr(row.receive_day, 'isoformat') else str(row.receive_day)
+            inbound_map[receive_day] = {
+                'actual_carton': int(row.actual_carton or 0),
+                'actual_cbm': to_float(row.actual_cbm)
+            }
+
+        detail_map = {}
+        for row in detail_rows:
+            delivery_day = row.delivery_day.isoformat() if hasattr(row.delivery_day, 'isoformat') else str(row.delivery_day)
+            detail_map.setdefault(delivery_day, []).append({
+                'origin': row.origin,
+                'supplier': row.supplier,
+                'parentpo': row.parentpo,
+                'po': row.po,
+                'hub_dc': row.hub_dc,
+                'item_count': int(row.item_count or 0),
+                'total_qty': int(row.total_qty or 0),
+                'total_cbm': to_float(row.total_cbm)
+            })
+
+        weeks = []
+        week_start = forecast_start
+        for week_index in range(8):
+            week_end = week_start + timedelta(days=6)
+            iso_year, iso_week, _ = week_start.isocalendar()
+            week = {
+                'key': f"{iso_year}-W{iso_week:02d}",
+                'week_no': iso_week,
+                'iso_label': f"W{iso_week:02d}",
+                'range_label': f"{week_start.day} {display_month_names[week_start.month - 1]} - {week_end.day} {display_month_names[week_end.month - 1]}",
+                'start_date': week_start.isoformat(),
+                'end_date': week_end.isoformat(),
+                'is_current': week_index == 0,
+                'days': [],
+                'total_qty': 0,
+                'total_cbm': 0,
+                'actual_carton': 0,
+                'actual_cbm': 0,
+                'cbm_ratio': 0,
+                'po_count': 0,
+                'item_count': 0,
+                'line_count': 0
+            }
+
+            current_day = week_start
+            while current_day <= week_end:
+                key = current_day.isoformat()
+                totals = daily_map.get(key, {
+                    'line_count': 0,
+                    'po_count': 0,
+                    'item_count': 0,
+                    'total_qty': 0,
+                    'total_cbm': 0
+                })
+                inbound_totals = inbound_map.get(key, {
+                    'actual_carton': 0,
+                    'actual_cbm': 0
+                })
+                cbm_ratio = round((inbound_totals['actual_cbm'] / totals['total_cbm'] * 100), 1) if totals['total_cbm'] else 0
+                day_data = {
+                    'date': key,
+                    'day': current_day.day,
+                    'weekday': weekdays[current_day.weekday()],
+                    'is_today': current_day == today,
+                    'details': detail_map.get(key, []),
+                    'actual_carton': inbound_totals['actual_carton'],
+                    'actual_cbm': inbound_totals['actual_cbm'],
+                    'cbm_ratio': cbm_ratio,
+                    **totals
+                }
+                week['days'].append(day_data)
+
+                week['total_qty'] += totals['total_qty']
+                week['total_cbm'] = round(week['total_cbm'] + totals['total_cbm'], 3)
+                week['actual_carton'] += inbound_totals['actual_carton']
+                week['actual_cbm'] = round(week['actual_cbm'] + inbound_totals['actual_cbm'], 3)
+                week['po_count'] += totals['po_count']
+                week['item_count'] += totals['item_count']
+                week['line_count'] += totals['line_count']
+                current_day += timedelta(days=1)
+
+            week['cbm_ratio'] = round((week['actual_cbm'] / week['total_cbm'] * 100), 1) if week['total_cbm'] else 0
+            weeks.append(week)
+            week_start += timedelta(days=7)
+
+        months = []
+        for month_start in [current_month_start, next_month_start]:
+            end_day = month_end(month_start)
+            month = {
+                'key': month_start.strftime('%Y-%m'),
+                'label': f"{month_names[month_start.month - 1]} {month_start.year}",
+                'weeks': [],
+                'total_qty': 0,
+                'total_cbm': 0,
+                'actual_carton': 0,
+                'actual_cbm': 0,
+                'cbm_ratio': 0,
+                'po_count': 0,
+                'item_count': 0,
+                'line_count': 0
+            }
+
+            day = month_start
+            week_no = 1
+            while day <= end_day:
+                days_to_sunday = 6 - day.weekday()
+                week_end = min(day + timedelta(days=days_to_sunday), end_day)
+                week = {
+                    'week_no': week_no,
+                    'label': f"Tuan {week_no}",
+                    'start_date': day.isoformat(),
+                    'end_date': week_end.isoformat(),
+                    'days': [],
+                    'total_qty': 0,
+                    'total_cbm': 0,
+                    'actual_carton': 0,
+                    'actual_cbm': 0,
+                    'cbm_ratio': 0,
+                    'po_count': 0,
+                    'item_count': 0,
+                    'line_count': 0
+                }
+
+                current_day = day
+                while current_day <= week_end:
+                    key = current_day.isoformat()
+                    totals = daily_map.get(key, {
+                        'line_count': 0,
+                        'po_count': 0,
+                        'item_count': 0,
+                        'total_qty': 0,
+                        'total_cbm': 0
+                    })
+                    inbound_totals = inbound_map.get(key, {
+                        'actual_carton': 0,
+                        'actual_cbm': 0
+                    })
+                    cbm_ratio = round((inbound_totals['actual_cbm'] / totals['total_cbm'] * 100), 1) if totals['total_cbm'] else 0
+                    day_data = {
+                        'date': key,
+                        'day': current_day.day,
+                        'weekday': weekdays[current_day.weekday()],
+                        'is_today': current_day == today,
+                        'details': detail_map.get(key, []),
+                        'actual_carton': inbound_totals['actual_carton'],
+                        'actual_cbm': inbound_totals['actual_cbm'],
+                        'cbm_ratio': cbm_ratio,
+                        **totals
+                    }
+                    week['days'].append(day_data)
+
+                    week['total_qty'] += totals['total_qty']
+                    week['total_cbm'] = round(week['total_cbm'] + totals['total_cbm'], 3)
+                    week['actual_carton'] += inbound_totals['actual_carton']
+                    week['actual_cbm'] = round(week['actual_cbm'] + inbound_totals['actual_cbm'], 3)
+                    week['cbm_ratio'] = round((week['actual_cbm'] / week['total_cbm'] * 100), 1) if week['total_cbm'] else 0
+                    week['po_count'] += totals['po_count']
+                    week['item_count'] += totals['item_count']
+                    week['line_count'] += totals['line_count']
+
+                    month['total_qty'] += totals['total_qty']
+                    month['total_cbm'] = round(month['total_cbm'] + totals['total_cbm'], 3)
+                    month['actual_carton'] += inbound_totals['actual_carton']
+                    month['actual_cbm'] = round(month['actual_cbm'] + inbound_totals['actual_cbm'], 3)
+                    month['cbm_ratio'] = round((month['actual_cbm'] / month['total_cbm'] * 100), 1) if month['total_cbm'] else 0
+                    month['po_count'] += totals['po_count']
+                    month['item_count'] += totals['item_count']
+                    month['line_count'] += totals['line_count']
+
+                    current_day += timedelta(days=1)
+
+                month['weeks'].append(week)
+                day = week_end + timedelta(days=1)
+                week_no += 1
+
+            months.append(month)
+
+        return jsonify({
+            'success': True,
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'start_date': forecast_start.isoformat(),
+            'end_date': (forecast_end - timedelta(days=1)).isoformat(),
+            'weeks': weeks,
+            'months': months
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/outbound/jobnos')
 def outbound_jobnos():
     if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401

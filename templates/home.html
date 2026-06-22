@@ -356,6 +356,12 @@
                 <h3>Dashboard Pallet</h3>
                 <p>Tinh so pallet can theo CBM va loai pallet</p>
             </a>
+
+            <a href="/forecast" class="card" style="border-color: #0d6efd;">
+                <div class="card-icon" style="color: #0d6efd; background-color: rgba(13, 110, 253, 0.1);"><i class="fas fa-calendar-week"></i></div>
+                <h3>Forecast</h3>
+                <p>Xem forecast theo tuan va ngay trong 2 thang</p>
+            </a>
             {% endif %}
             <!-- Chức năng Sửa Pallet Type: Dành cho admin và scanner -->
             {% if session.get('role') in ['admin', 'scanner'] %}
