@@ -213,6 +213,18 @@
         .card-findsku { border-color: #0d9488; }
         .card-findsku .card-icon { color: #0d9488; background-color: rgba(13, 148, 136, 0.1); }
         .card-findsku:hover .card-icon { background-color: #0d9488; color: white; }
+
+        .card-dongcont { border-color: #475569; }
+        .card-dongcont .card-icon { color: #475569; background-color: rgba(71, 85, 105, 0.1); }
+        .card-dongcont:hover .card-icon { background-color: #475569; color: white; }
+
+        .card-upload { border-color: #0f766e; }
+        .card-upload .card-icon { color: #0f766e; background-color: rgba(15, 118, 110, 0.1); }
+        .card-upload:hover .card-icon { background-color: #0f766e; color: white; }
+
+        .card-casestudy { border-color: #2563eb; }
+        .card-casestudy .card-icon { color: #2563eb; background-color: rgba(37, 99, 235, 0.1); }
+        .card-casestudy:hover .card-icon { background-color: #2563eb; color: white; }
         
         footer {
             text-align: center;
@@ -300,6 +312,20 @@
             {% endif %}
 
             <!-- Location: tất cả tài khoản được xem, chỉ admin được sửa/xóa -->
+            {% if session.get('role') == 'admin' %}
+            <a href="/uploadanh" class="card card-upload">
+                <div class="card-icon"><i class="fas fa-images"></i></div>
+                <h3>Upload Anh</h3>
+                <p>Luu anh vao OneDrive theo thu muc</p>
+            </a>
+            {% endif %}
+
+            <a href="/casestudy" class="card card-casestudy">
+                <div class="card-icon"><i class="fas fa-layer-group"></i></div>
+                <h3>Case study</h3>
+                <p>Hinh anh va noi dung tu training_images_1</p>
+            </a>
+
             <a href="/location" class="card card-location">
                 <div class="card-icon"><i class="fas fa-location-dot"></i></div>
                 <h3>Location</h3>
@@ -361,6 +387,12 @@
                 <div class="card-icon" style="color: #0d6efd; background-color: rgba(13, 110, 253, 0.1);"><i class="fas fa-calendar-week"></i></div>
                 <h3>Forecast</h3>
                 <p>Xem forecast theo tuan va ngay trong 2 thang</p>
+            </a>
+
+            <a href="/dongcont" class="card card-dongcont">
+                <div class="card-icon"><i class="fas fa-truck-ramp-box"></i></div>
+                <h3>&#272;&oacute;ng Container</h3>
+                <p>T&iacute;nh v&agrave; v&#7869; s&#417; &#273;&#7891; x&#7871;p pallet 2D</p>
             </a>
             {% endif %}
             <!-- Chức năng Sửa Pallet Type: Dành cho admin và scanner -->

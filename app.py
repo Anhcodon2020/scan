@@ -1,11 +1,14 @@
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session, Response
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session, Response, send_from_directory
 from sqlalchemy import text, func, case, extract
 import os
 import csv
 import io
+import re
+import uuid
 from datetime import datetime, timedelta, time
 import pandas as pd
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 
 # Nạp biến môi trường từ file .env
 load_dotenv()
@@ -31,6 +34,141 @@ db.init_app(app)
 
 # Cache cục bộ cho MasterData để giảm query DB khi scan liên tục
 _refix_cache = {}
+
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+IMAGE_UPLOAD_TABLE = os.getenv('IMAGE_UPLOAD_TABLE', 'training_images_1')
+
+def _default_onedrive_upload_root():
+    app_uploads = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'uploads')
+    explicit_root = os.getenv('ONEDRIVE_UPLOAD_ROOT')
+    if explicit_root:
+        return explicit_root
+    return app_uploads
+
+ONEDRIVE_UPLOAD_ROOT = os.path.abspath(_default_onedrive_upload_root())
+
+def _safe_folder_name(value):
+    value = secure_filename((value or '').strip())
+    return value or 'uncategorized'
+
+def _is_allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+def _image_upload_table_name():
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', IMAGE_UPLOAD_TABLE):
+        raise ValueError('IMAGE_UPLOAD_TABLE khong hop le')
+    return IMAGE_UPLOAD_TABLE
+
+def _ensure_image_upload_table(table_name):
+    if db.engine.dialect.name == 'sqlite':
+        db.session.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title VARCHAR(255) NOT NULL,
+                category VARCHAR(120) NOT NULL,
+                description TEXT,
+                image_url VARCHAR(500) NOT NULL,
+                onedrive_file_id VARCHAR(500) NOT NULL,
+                sort_order INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        existing_columns = {
+            row[1]
+            for row in db.session.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+        }
+        sqlite_columns = {
+            'title': 'VARCHAR(255) NOT NULL DEFAULT ""',
+            'category': 'VARCHAR(120) NOT NULL DEFAULT "uncategorized"',
+            'description': 'TEXT',
+            'image_url': 'VARCHAR(500) NOT NULL DEFAULT ""',
+            'onedrive_file_id': 'VARCHAR(500) NOT NULL DEFAULT ""',
+            'sort_order': 'INTEGER DEFAULT 0',
+            'is_active': 'INTEGER DEFAULT 1',
+            'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+            'updated_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+        }
+        for column_name, column_def in sqlite_columns.items():
+            if column_name not in existing_columns:
+                db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"))
+        return
+
+    if db.engine.dialect.name in ('mysql', 'mariadb'):
+        db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(120) NOT NULL,
+            description TEXT,
+            image_url VARCHAR(500) NOT NULL,
+            onedrive_file_id VARCHAR(500) NOT NULL,
+            sort_order INT DEFAULT 0,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+        """))
+        existing_columns = {
+            row[0]
+            for row in db.session.execute(text(f"SHOW COLUMNS FROM {table_name}")).fetchall()
+        }
+        mysql_columns = {
+            'title': 'VARCHAR(255) NOT NULL DEFAULT ""',
+            'category': 'VARCHAR(120) NOT NULL DEFAULT "uncategorized"',
+            'description': 'TEXT',
+            'image_url': 'VARCHAR(500) NOT NULL DEFAULT ""',
+            'onedrive_file_id': 'VARCHAR(500) NOT NULL DEFAULT ""',
+            'sort_order': 'INT DEFAULT 0',
+            'is_active': 'TINYINT(1) DEFAULT 1',
+            'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+            'updated_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+        }
+        for column_name, column_def in mysql_columns.items():
+            if column_name not in existing_columns:
+                db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"))
+        return
+
+    db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(120) NOT NULL,
+            description TEXT,
+            image_url VARCHAR(500) NOT NULL,
+            onedrive_file_id VARCHAR(500) NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    existing_columns = {
+        row[0]
+        for row in db.session.execute(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :table_name
+            """),
+            {'table_name': table_name}
+        ).fetchall()
+    }
+    postgres_columns = {
+        'title': "VARCHAR(255) NOT NULL DEFAULT ''",
+        'category': "VARCHAR(120) NOT NULL DEFAULT 'uncategorized'",
+        'description': 'TEXT',
+        'image_url': "VARCHAR(500) NOT NULL DEFAULT ''",
+        'onedrive_file_id': "VARCHAR(500) NOT NULL DEFAULT ''",
+        'sort_order': 'INTEGER DEFAULT 0',
+        'is_active': 'INTEGER DEFAULT 1',
+        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'updated_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    }
+    for column_name, column_def in postgres_columns.items():
+        if column_name not in existing_columns:
+            db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"))
 
 # --- Helper Functions: Xử lý Date/Time an toàn ---
 def _parse_date(value):
@@ -1475,6 +1613,11 @@ def dashboard_pallet_page():
 def forecast_page():
     if 'user' not in session: return redirect(url_for('login'))
     return render_template('forecast.html')
+
+@app.route('/dongcont')
+def dongcont_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('dongcont.html')
 
 @app.route('/api/forecast')
 def forecast_data():
@@ -2947,6 +3090,136 @@ def create_labor_assignment():
     # Return a success response
     return jsonify({'success': True, 'message': 'Labor assignment created successfully'})
 
+
+@app.route('/uploadanh')
+def uploadanh():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('uploadanh.html', upload_root=ONEDRIVE_UPLOAD_ROOT)
+
+
+@app.route('/casestudy')
+def casestudy():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    table_name = _image_upload_table_name()
+    try:
+        _ensure_image_upload_table(table_name)
+        rows = db.session.execute(
+            text(f"""
+                SELECT id, title, category, description, image_url, onedrive_file_id, sort_order, created_at
+                FROM {table_name}
+                WHERE COALESCE(is_active, 1) = 1
+                  AND COALESCE(image_url, '') <> ''
+                ORDER BY category ASC, sort_order ASC, id DESC
+            """)
+        ).mappings().all()
+    except Exception as e:
+        return render_template('casestudy.html', items=[], categories=[], error=str(e))
+
+    items = [dict(row) for row in rows]
+    categories = []
+    seen_categories = set()
+    for item in items:
+        category = item.get('category') or 'Uncategorized'
+        item['category'] = category
+        if category not in seen_categories:
+            seen_categories.add(category)
+            categories.append(category)
+
+    return render_template('casestudy.html', items=items, categories=categories, error=None)
+
+
+@app.route('/onedrive-images/<path:filename>')
+def onedrive_image(filename):
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return send_from_directory(ONEDRIVE_UPLOAD_ROOT, filename)
+
+
+@app.route('/api/uploadanh', methods=['GET', 'POST'])
+def api_uploadanh():
+    if request.method == 'GET':
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return redirect(url_for('uploadanh'))
+
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Phien dang nhap het han'}), 401
+
+    image = request.files.get('image')
+    title = (request.form.get('title') or '').strip()
+    category = (request.form.get('category') or '').strip()
+    description = (request.form.get('description') or '').strip()
+    sort_order_raw = (request.form.get('sort_order') or '0').strip()
+    is_active = 1 if request.form.get('is_active', '1') in ('1', 'true', 'on') else 0
+
+    if not image or not image.filename:
+        return jsonify({'success': False, 'message': 'Vui long chon anh'}), 400
+    if not _is_allowed_image(image.filename):
+        return jsonify({'success': False, 'message': 'Chi cho phep file png, jpg, jpeg, gif, webp'}), 400
+
+    try:
+        sort_order = int(sort_order_raw)
+    except ValueError:
+        sort_order = 0
+
+    folder_name = _safe_folder_name(category)
+    upload_dir = os.path.join(ONEDRIVE_UPLOAD_ROOT, folder_name)
+    saved_path = None
+
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+        original_name = secure_filename(image.filename)
+        ext = original_name.rsplit('.', 1)[1].lower()
+        file_id = uuid.uuid4().hex
+        saved_name = f'{file_id}.{ext}'
+        saved_path = os.path.join(upload_dir, saved_name)
+        image.save(saved_path)
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Luu file that bai: {e}'}), 500
+
+    relative_path = f'{folder_name}/{saved_name}'
+    image_url = url_for('onedrive_image', filename=relative_path, _external=False)
+
+    try:
+        table_name = _image_upload_table_name()
+        _ensure_image_upload_table(table_name)
+        db.session.execute(
+            text(f"""
+                INSERT INTO {table_name}
+                    (title, category, description, image_url, onedrive_file_id, sort_order, is_active)
+                VALUES
+                    (:title, :category, :description, :image_url, :onedrive_file_id, :sort_order, :is_active)
+            """),
+            {
+                'title': title or original_name,
+                'category': category or folder_name,
+                'description': description,
+                'image_url': image_url,
+                'onedrive_file_id': relative_path,
+                'sort_order': sort_order,
+                'is_active': is_active,
+            }
+        )
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        try:
+            if saved_path:
+                os.remove(saved_path)
+        except OSError:
+            pass
+        return jsonify({'success': False, 'message': f'Luu DB that bai: {e}'}), 500
+
+    return jsonify({
+        'success': True,
+        'message': 'Upload anh thanh cong',
+        'image_url': image_url,
+        'onedrive_file_id': relative_path,
+        'folder': upload_dir,
+    })
 
 
 

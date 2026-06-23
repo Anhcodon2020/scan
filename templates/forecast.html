@@ -56,6 +56,7 @@
                     <li class="nav-item"><a class="nav-link" href="/">Trang chu</a></li>
                     <li class="nav-item"><a class="nav-link" href="/outbound">Outbound</a></li>
                     <li class="nav-item"><a class="nav-link active" aria-current="page" href="/forecast">Forecast</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/casestudy">Case study</a></li>
                     <li class="nav-item"><a class="nav-link" href="/logout">Dang xuat</a></li>
                 </ul>
             </div>
@@ -197,6 +198,10 @@
 
     <script src="https://unpkg.com/vue@3"></script>
     <script>
+        setTimeout(() => {
+            window.location.href = '/casestudy';
+        }, 300000);
+
         const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
 
         createApp({

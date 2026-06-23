@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xep pallet vao container</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #657086;
+      --line: #d8deea;
+      --accent: #2563eb;
+      --ok: #15803d;
+      --warn: #b45309;
+      --p12: #22c55e;
+      --p16: #3b82f6;
+      --p19: #f59e0b;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    main {
+      width: min(1180px, calc(100% - 28px));
+      margin: 24px auto 48px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 10px 24px rgba(21, 32, 55, 0.06);
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .hint {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input[type="number"],
+    select {
+      width: 100%;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 16px;
+      background: #fff;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field-grid .field {
+      margin-bottom: 14px;
+    }
+
+    .field-grid label {
+      min-height: 20px;
+    }
+
+    .orientation-label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .lane-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 1px;
+      border-top: 1px dashed rgba(100, 116, 139, 0.45);
+      pointer-events: none;
+    }
+
+    .row-label {
+      position: absolute;
+      left: 8px;
+      z-index: 3;
+      color: rgba(17, 24, 39, 0.6);
+      font-size: 12px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    button {
+      width: 100%;
+      height: 42px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      filter: brightness(0.95);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcff;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 2px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+    }
+
+    .container-card {
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+    }
+
+    .container-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .container-title span {
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .drawing-wrap {
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
+
+    .container {
+      position: relative;
+      width: 960px;
+      height: 220px;
+      border: 3px solid #111827;
+      border-radius: 7px;
+      background: linear-gradient(to right, rgba(17, 24, 39, 0.08) 1px, transparent 1px) 0 0 / 80px 100%;
+    }
+
+    .pallet {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(0, 0, 0, 0.35);
+      border-radius: 5px;
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 13px;
+      text-align: center;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+    }
+
+    .rotate-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: auto;
+      height: 24px;
+      padding: 0 7px;
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.82);
+      color: #fff;
+      font-size: 11px;
+      line-height: 24px;
+      z-index: 4;
+    }
+
+    .rotate-btn:hover {
+      filter: brightness(1.1);
+    }
+
+    .pallet small {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+      font-size: 11px;
+    }
+
+    .p12 {
+      background: color-mix(in srgb, var(--p12) 72%, white);
+    }
+
+    .p16 {
+      background: color-mix(in srgb, var(--p16) 70%, white);
+    }
+
+    .p19 {
+      background: color-mix(in srgb, var(--p19) 74%, white);
+    }
+
+    .note {
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .ok {
+      color: var(--ok);
+    }
+
+    .warn {
+      color: var(--warn);
+    }
+
+    @media (max-width: 860px) {
+      main {
+        width: min(100% - 18px, 1180px);
+        margin-top: 14px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tinh cach dong pallet vao container</h1>
+    <p class="subtitle">Container dai 12m, ngang 2.34m. Chon so luong va huong xoay pallet, chuong trinh se ve so do 2D theo ty le.</p>
+
+    <div class="layout">
+      <section class="panel" aria-label="Nhap so luong pallet">
+        <div class="field-grid">
+          <div class="field">
+            <label for="qty12">Pallet 1.2m</label>
+            <input id="qty12" type="number" min="0" step="1" value="0">
+            <span class="hint" id="hint12">Dai 1.2m, ngang 1m</span>
+          </div>
+          <div class="field">
+            <label class="orientation-label" for="orientation12">Huong</label>
+            <select id="orientation12">
+              <option value="vertical">Doc</option>
+              <option value="horizontal">Ngang</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="qty16">Pallet 1.6m</label>
+            <input id="qty16" type="number" min="0" step="1" value="0">
+            <span class="hint" id="hint16">Dai 1.6m, ngang 1m</span>
+          </div>
+          <div class="field">
+            <label class="orientation-label" for="orientation16">Huong</label>
+            <select id="orientation16">
+              <option value="vertical">Doc</option>
+              <option value="horizontal">Ngang</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="qty19">Pallet 1.9m</label>
+            <input id="qty19" type="number" min="0" step="1" value="0">
+            <span class="hint" id="hint19">Dai 1.9m, ngang 1m</span>
+          </div>
+          <div class="field">
+            <label class="orientation-label" for="orientation19">Huong</label>
+            <select id="orientation19">
+              <option value="vertical">Doc</option>
+              <option value="horizontal">Ngang</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="calculateBtn" type="button">Tinh va ve so do</button>
+        <p class="note">Quy tac xep: pallet chiem dien tich lon hon duoc uu tien truoc, sau do gan vao hang con phu hop nhat. Neu vuot suc chua, chuong trinh tu dong tach sang container tiep theo.</p>
+      </section>
+
+      <section class="panel" aria-live="polite">
+        <div class="stats">
+          <div class="stat">
+            <strong id="totalPallets">0</strong>
+            <span>Tong pallet</span>
+          </div>
+          <div class="stat">
+            <strong id="containerCount">0</strong>
+            <span>Container can dung</span>
+          </div>
+          <div class="stat">
+            <strong id="usedLength">0m</strong>
+            <span>Tong met dai dang xep</span>
+          </div>
+          <div class="stat">
+            <strong id="fillRate">0%</strong>
+            <span>Ty le lap day mat san</span>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="legend-item"><span class="swatch" style="background:#86efac"></span>Pallet 1.2m</span>
+          <span class="legend-item"><span class="swatch" style="background:#93c5fd"></span>Pallet 1.6m</span>
+          <span class="legend-item"><span class="swatch" style="background:#fcd34d"></span>Pallet 1.9m</span>
+          <span class="legend-item"><span class="swatch" style="background:#fff"></span>Khung container 12m x 2.34m</span>
+        </div>
+
+        <div id="result"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const CONTAINER_LENGTH = 12;
+    const CONTAINER_WIDTH = 2.34;
+    const DRAW_LENGTH = 960;
+    const DRAW_WIDTH = 220;
+    const INNER_PADDING = 8;
+
+    const palletTypes = [
+      { id: 'p19', name: '1.9m', baseLength: 1.9, baseWidth: 1, inputId: 'qty19', orientationId: 'orientation19', hintId: 'hint19' },
+      { id: 'p16', name: '1.6m', baseLength: 1.6, baseWidth: 1, inputId: 'qty16', orientationId: 'orientation16', hintId: 'hint16' },
+      { id: 'p12', name: '1.2m', baseLength: 1.2, baseWidth: 1, inputId: 'qty12', orientationId: 'orientation12', hintId: 'hint12' }
+    ];
+
+    const resultEl = document.getElementById('result');
+    const totalPalletsEl = document.getElementById('totalPallets');
+    const containerCountEl = document.getElementById('containerCount');
+    const usedLengthEl = document.getElementById('usedLength');
+    const fillRateEl = document.getElementById('fillRate');
+    const calculateBtn = document.getElementById('calculateBtn');
+    const palletRotations = new Map();
+
+    function readQuantity(inputId) {
+      const value = Number(document.getElementById(inputId).value);
+      if (!Number.isFinite(value) || value < 0) return 0;
+      return Math.floor(value);
+    }
+
+    function getPalletDimensions(type, orientation) {
+      const isHorizontal = orientation === 'horizontal';
+
+      return {
+        length: isHorizontal ? type.baseWidth : type.baseLength,
+        width: isHorizontal ? type.baseLength : type.baseWidth,
+        label: isHorizontal ? 'Ngang' : 'Doc'
+      };
+    }
+
+    function orientPallet(type, orientation = document.getElementById(type.orientationId).value) {
+      const dimensions = getPalletDimensions(type, orientation);
+
+      return {
+        ...type,
+        orientation,
+        ...dimensions
+      };
+    }
+
+    function updateHints() {
+      palletTypes.forEach((type) => {
+        const oriented = orientPallet(type);
+        document.getElementById(type.hintId).textContent = `Dai ${formatMeter(oriented.length)}, ngang ${formatMeter(oriented.width)}`;
+      });
+    }
+
+    function buildPalletList() {
+      const pallets = [];
+      const activeKeys = new Set();
+
+      palletTypes.forEach((type) => {
+        const qty = readQuantity(type.inputId);
+        const defaultOrientation = document.getElementById(type.orientationId).value;
+
+        for (let i = 0; i < qty; i += 1) {
+          const index = i + 1;
+          const key = `${type.id}-${index}`;
+          const orientation = palletRotations.get(key) || defaultOrientation;
+          const oriented = orientPallet(type, orientation);
+          activeKeys.add(key);
+          pallets.push({ ...oriented, key, index, area: oriented.length * oriented.width });
+        }
+      });
+
+      [...palletRotations.keys()].forEach((key) => {
+        if (!activeKeys.has(key)) palletRotations.delete(key);
+      });
+
+      return pallets.sort((a, b) => b.area - a.area || b.length - a.length);
+    }
+
+    function makeContainer() {
+      return {
+        rows: []
+      };
+    }
+
+    function usedContainerWidth(container) {
+      return container.rows.reduce((sum, row) => sum + row.width, 0);
+    }
+
+    function packPallets(pallets) {
+      const containers = [];
+
+      pallets.forEach((pallet) => {
+        let placed = false;
+
+        for (const container of containers) {
+          const rowsBySpace = [...container.rows].sort((a, b) => a.used - b.used);
+          const row = rowsBySpace.find((item) => (
+            pallet.width <= item.width + 0.0001 &&
+            item.used + pallet.length <= CONTAINER_LENGTH + 0.0001
+          ));
+
+          if (row) {
+            row.pallets.push({ ...pallet, x: row.used, y: row.y });
+            row.used += pallet.length;
+            placed = true;
+            break;
+          }
+
+          const nextY = usedContainerWidth(container);
+          if (nextY + pallet.width <= CONTAINER_WIDTH + 0.0001) {
+            container.rows.push({
+              y: nextY,
+              width: pallet.width,
+              used: pallet.length,
+              pallets: [{ ...pallet, x: 0, y: nextY }]
+            });
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          const container = makeContainer();
+          container.rows.push({
+            y: 0,
+            width: pallet.width,
+            used: pallet.length,
+            pallets: [{ ...pallet, x: 0, y: 0 }]
+          });
+          containers.push(container);
+        }
+      });
+
+      return containers;
+    }
+
+    function formatMeter(value) {
+      return `${Number(value.toFixed(2))}m`;
+    }
+
+    function renderPallet(pallet) {
+      const scaleX = (DRAW_LENGTH - INNER_PADDING * 2) / CONTAINER_LENGTH;
+      const scaleY = (DRAW_WIDTH - INNER_PADDING * 2) / CONTAINER_WIDTH;
+      const top = INNER_PADDING + pallet.y * scaleY;
+      const left = INNER_PADDING + pallet.x * scaleX;
+      const width = pallet.length * scaleX;
+      const height = pallet.width * scaleY;
+
+      return `
+        <div class="pallet ${pallet.id}" data-pallet-key="${pallet.key}" style="left:${left}px; top:${top}px; width:${width}px; height:${height}px">
+          <button class="rotate-btn" type="button" data-pallet-key="${pallet.key}" title="Xoay pallet nay">Xoay</button>
+          <div>${pallet.name} #${pallet.index}<small>${pallet.label}: ${formatMeter(pallet.length)} x ${formatMeter(pallet.width)}</small></div>
+        </div>
+      `;
+    }
+
+    function togglePalletRotation(key) {
+      const current = palletRotations.get(key);
+      if (current) {
+        palletRotations.set(key, current === 'horizontal' ? 'vertical' : 'horizontal');
+      } else {
+        const type = palletTypes.find((item) => key.startsWith(`${item.id}-`));
+        const defaultOrientation = type ? document.getElementById(type.orientationId).value : 'vertical';
+        palletRotations.set(key, defaultOrientation === 'horizontal' ? 'vertical' : 'horizontal');
+      }
+
+      calculate();
+    }
+
+    function renderContainer(container, index) {
+      const scaleY = (DRAW_WIDTH - INNER_PADDING * 2) / CONTAINER_WIDTH;
+      const used = container.rows.reduce((max, row) => Math.max(max, row.used), 0);
+      const totalArea = container.rows
+        .flatMap((row) => row.pallets)
+        .reduce((sum, pallet) => sum + pallet.length * pallet.width, 0);
+      const fill = Math.round((totalArea / (CONTAINER_LENGTH * CONTAINER_WIDTH)) * 100);
+      const rowsInfo = container.rows
+        .map((row, rowIndex) => {
+          const remaining = Math.max(CONTAINER_LENGTH - row.used, 0);
+          return `Hang ${rowIndex + 1}: da dung ${formatMeter(row.used)}, con ${formatMeter(remaining)}`;
+        })
+        .join(' | ');
+      const rowGuides = container.rows.map((row, rowIndex) => {
+        const top = INNER_PADDING + row.y * scaleY;
+        return `
+          <div class="lane-line" style="top:${top}px"></div>
+          <div class="row-label" style="top:${top + 6}px">Hang ${rowIndex + 1}</div>
+        `;
+      }).join('');
+      const pallets = container.rows
+        .map((row) => row.pallets.map((pallet) => renderPallet(pallet)).join(''))
+        .join('');
+
+      return `
+        <div class="container-card">
+          <div class="container-title">
+            <div>Container ${index + 1}</div>
+            <span>${rowsInfo} | Lap day: ${fill}%</span>
+          </div>
+          <div class="drawing-wrap">
+            <div class="container" role="img" aria-label="So do xep pallet container ${index + 1}">
+              ${rowGuides}
+              ${pallets}
+            </div>
+          </div>
+          <p class="note ${used <= CONTAINER_LENGTH ? 'ok' : 'warn'}">Chieu dai dang dung nhieu nhat: ${formatMeter(used)} / 12m.</p>
+        </div>
+      `;
+    }
+
+    function calculate() {
+      updateHints();
+      const pallets = buildPalletList();
+      const containers = packPallets(pallets);
+      const totalLength = pallets.reduce((sum, pallet) => sum + pallet.length, 0);
+      const totalArea = pallets.reduce((sum, pallet) => sum + pallet.length * pallet.width, 0);
+      const capacity = Math.max(containers.length, 1) * CONTAINER_LENGTH * CONTAINER_WIDTH;
+      const fillRate = pallets.length ? Math.round((totalArea / capacity) * 100) : 0;
+
+      totalPalletsEl.textContent = pallets.length;
+      containerCountEl.textContent = containers.length;
+      usedLengthEl.textContent = formatMeter(totalLength);
+      fillRateEl.textContent = `${fillRate}%`;
+
+      if (!pallets.length) {
+        resultEl.innerHTML = '<p class="note">Nhap so luong pallet, sau do bam nut tinh de xem so do xep hang.</p>';
+        return;
+      }
+
+      resultEl.innerHTML = containers.map(renderContainer).join('');
+    }
+
+    calculateBtn.addEventListener('click', calculate);
+    resultEl.addEventListener('click', (event) => {
+      const button = event.target.closest('.rotate-btn');
+      if (!button) return;
+      togglePalletRotation(button.dataset.palletKey);
+    });
+
+    document.querySelectorAll('input[type="number"], select').forEach((input) => {
+      input.addEventListener('input', calculate);
+      input.addEventListener('change', calculate);
+    });
+
+    calculate();
+  </script>
+</body>
+</html>

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case study</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f4f7fb;
+            --surface: #ffffff;
+            --text: #1f2937;
+            --muted: #64748b;
+            --line: #d9e2ec;
+            --primary: #0f766e;
+            --primary-dark: #115e59;
+            --danger: #b91c1c;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .navbar {
+            height: 64px;
+            padding: 0 22px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand, .nav-link {
+            color: var(--text);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            font-weight: 700;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .nav-link {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        main {
+            max-width: 1180px;
+            margin: 28px auto 44px;
+            padding: 0 18px;
+        }
+
+        .page-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 30px;
+            line-height: 1.2;
+        }
+
+        .subtitle {
+            margin: 0;
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        .count {
+            padding: 8px 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--muted);
+            background: var(--surface);
+            white-space: nowrap;
+            font-size: 14px;
+        }
+
+        .category-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        .category-chip {
+            border: 1px solid var(--line);
+            background: var(--surface);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 8px 11px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .slideshow {
+            position: relative;
+            margin-bottom: 22px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #111827;
+            min-height: 420px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transform: scale(1.015);
+            transition: opacity 700ms ease, transform 900ms ease;
+            pointer-events: none;
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+
+        .slide img {
+            width: 100%;
+            height: 100%;
+            min-height: 420px;
+            object-fit: contain;
+            display: block;
+            background: #0f172a;
+        }
+
+        .slide::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.78));
+        }
+
+        .slide-caption {
+            position: absolute;
+            left: 28px;
+            right: 28px;
+            bottom: 28px;
+            z-index: 1;
+            color: #fff;
+            max-width: 720px;
+        }
+
+        .slide-category {
+            display: inline-flex;
+            margin-bottom: 10px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.18);
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .slide-title {
+            margin: 0 0 8px;
+            font-size: 32px;
+            line-height: 1.2;
+        }
+
+        .slide-description {
+            margin: 0;
+            font-size: 15px;
+            line-height: 1.55;
+            color: rgba(255, 255, 255, 0.86);
+            white-space: pre-line;
+        }
+
+        .slide-control {
+            position: absolute;
+            top: 50%;
+            z-index: 2;
+            width: 42px;
+            height: 42px;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 50%;
+            color: #fff;
+            background: rgba(15, 23, 42, 0.42);
+            cursor: pointer;
+            transform: translateY(-50%);
+        }
+
+        .slide-control:hover {
+            background: rgba(15, 23, 42, 0.72);
+        }
+
+        .slide-control.prev { left: 14px; }
+        .slide-control.next { right: 14px; }
+
+        .slide-dots {
+            position: absolute;
+            right: 22px;
+            bottom: 22px;
+            z-index: 2;
+            display: flex;
+            gap: 7px;
+        }
+
+        .slide-dot {
+            width: 10px;
+            height: 10px;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.45);
+            cursor: pointer;
+        }
+
+        .slide-dot.active {
+            background: #fff;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 18px;
+        }
+
+        .case-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+        }
+
+        .case-image {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: #e5edf5;
+            object-fit: contain;
+            display: block;
+        }
+
+        .case-body {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            flex: 1;
+        }
+
+        .case-category {
+            color: var(--primary-dark);
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .case-title {
+            margin: 0;
+            font-size: 18px;
+            line-height: 1.3;
+        }
+
+        .case-description {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.55;
+            white-space: pre-line;
+        }
+
+        .case-meta {
+            margin-top: auto;
+            padding-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .empty, .error {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px;
+            color: var(--muted);
+        }
+
+        .error {
+            border-color: #fecaca;
+            color: var(--danger);
+            background: #fff5f5;
+        }
+
+        @media (max-width: 680px) {
+            .navbar {
+                height: auto;
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 14px 16px;
+            }
+
+            .nav-actions {
+                width: 100%;
+                justify-content: space-between;
+                flex-wrap: wrap;
+            }
+
+            .page-head {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .count {
+                white-space: normal;
+            }
+
+            .slideshow,
+            .slide img {
+                min-height: 320px;
+            }
+
+            .slide-caption {
+                left: 18px;
+                right: 18px;
+                bottom: 22px;
+            }
+
+            .slide-title {
+                font-size: 24px;
+            }
+
+            .slide-dots {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand"><i class="fas fa-layer-group"></i> Case study</a>
+        <div class="nav-actions">
+            <span><i class="fas fa-user-circle"></i> {{ session.get('user') }}</span>
+            <a href="/" class="nav-link"><i class="fas fa-house"></i> Home</a>
+        </div>
+    </nav>
+
+    <main>
+        <section class="page-head">
+            <div>
+                <h1>Case study</h1>
+                <p class="subtitle">Hinh anh va noi dung tu bang training_images_1.</p>
+            </div>
+            <div class="count">{{ items|length }} noi dung</div>
+        </section>
+
+        {% if error %}
+            <div class="error">Khong tai duoc du lieu: {{ error }}</div>
+        {% elif not items %}
+            <div class="empty">Chua co hinh anh nao duoc kich hoat trong bang training_images_1.</div>
+        {% else %}
+            <div class="category-bar">
+                {% for category in categories %}
+                    <span class="category-chip">{{ category }}</span>
+                {% endfor %}
+            </div>
+
+            <section class="slideshow" aria-label="Case study slideshow">
+                {% for item in items %}
+                    <article class="slide {% if loop.first %}active{% endif %}">
+                        <img src="{{ item.image_url }}" alt="{{ item.title or item.category }}">
+                        <div class="slide-caption">
+                            <div class="slide-category">{{ item.category }}</div>
+                            <h2 class="slide-title">{{ item.title or 'Untitled' }}</h2>
+                            {% if item.description %}
+                                <p class="slide-description">{{ item.description }}</p>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% endfor %}
+                {% if items|length > 1 %}
+                    <button class="slide-control prev" type="button" id="prevSlide" aria-label="Anh truoc"><i class="fas fa-chevron-left"></i></button>
+                    <button class="slide-control next" type="button" id="nextSlide" aria-label="Anh tiep theo"><i class="fas fa-chevron-right"></i></button>
+                    <div class="slide-dots" aria-label="Chon anh">
+                        {% for item in items %}
+                            <button class="slide-dot {% if loop.first %}active{% endif %}" type="button" data-slide-index="{{ loop.index0 }}" aria-label="Anh {{ loop.index }}"></button>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </section>
+
+            <section class="grid">
+                {% for item in items %}
+                    <article class="case-card">
+                        <img class="case-image" src="{{ item.image_url }}" alt="{{ item.title or item.category }}" loading="lazy">
+                        <div class="case-body">
+                            <div class="case-category">{{ item.category }}</div>
+                            <h2 class="case-title">{{ item.title or 'Untitled' }}</h2>
+                            {% if item.description %}
+                                <p class="case-description">{{ item.description }}</p>
+                            {% endif %}
+                            {% if item.onedrive_file_id %}
+                                <div class="case-meta">{{ item.onedrive_file_id }}</div>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% endfor %}
+            </section>
+        {% endif %}
+    </main>
+    <script>
+        setTimeout(() => {
+            window.location.href = '/forecast';
+        }, 300000);
+
+        const slides = Array.from(document.querySelectorAll('.slide'));
+        const dots = Array.from(document.querySelectorAll('.slide-dot'));
+        const prevSlide = document.getElementById('prevSlide');
+        const nextSlide = document.getElementById('nextSlide');
+        let currentSlide = 0;
+        let slideTimer = null;
+
+        function showSlide(index) {
+            if (!slides.length) return;
+            currentSlide = (index + slides.length) % slides.length;
+            slides.forEach((slide, slideIndex) => {
+                slide.classList.toggle('active', slideIndex === currentSlide);
+            });
+            dots.forEach((dot, dotIndex) => {
+                dot.classList.toggle('active', dotIndex === currentSlide);
+            });
+        }
+
+        function startSlideshow() {
+            if (slides.length <= 1) return;
+            clearInterval(slideTimer);
+            slideTimer = setInterval(() => showSlide(currentSlide + 1), 10000);
+        }
+
+        function moveSlide(step) {
+            showSlide(currentSlide + step);
+            startSlideshow();
+        }
+
+        if (prevSlide) prevSlide.addEventListener('click', () => moveSlide(-1));
+        if (nextSlide) nextSlide.addEventListener('click', () => moveSlide(1));
+        dots.forEach((dot) => {
+            dot.addEventListener('click', () => {
+                showSlide(Number(dot.dataset.slideIndex));
+                startSlideshow();
+            });
+        });
+
+        startSlideshow();
+    </script>
+</body>
+</html>

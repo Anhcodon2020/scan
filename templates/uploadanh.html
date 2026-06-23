@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload anh</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f3f6fb;
+            --text: #1f2937;
+            --muted: #64748b;
+            --line: #d8e0ea;
+            --primary: #0f766e;
+            --primary-dark: #115e59;
+            --danger: #dc2626;
+            --success: #15803d;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .navbar {
+            height: 64px;
+            padding: 0 22px;
+            background: #fff;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand, .nav-link {
+            color: var(--text);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            font-weight: 700;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .nav-link {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        main {
+            max-width: 1060px;
+            margin: 28px auto;
+            padding: 0 18px;
+        }
+
+        .page-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 28px;
+            line-height: 1.2;
+        }
+
+        .hint {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 360px;
+            gap: 20px;
+        }
+
+        .panel {
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .form-row { margin-bottom: 16px; }
+        .form-row.full { grid-column: 1 / -1; }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 11px 12px;
+            font: inherit;
+            color: var(--text);
+            background: #fff;
+        }
+
+        textarea {
+            min-height: 116px;
+            resize: vertical;
+        }
+
+        .drop-zone {
+            border: 2px dashed #9fb0c3;
+            border-radius: 8px;
+            min-height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 18px;
+            background: #f8fafc;
+            cursor: pointer;
+        }
+
+        .drop-zone input { display: none; }
+
+        .drop-zone i {
+            font-size: 34px;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .drop-zone strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .preview {
+            display: none;
+            width: 100%;
+        }
+
+        .preview img {
+            width: 100%;
+            max-height: 420px;
+            object-fit: contain;
+            border-radius: 6px;
+            background: #eef2f7;
+        }
+
+        .switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .switch input {
+            width: 18px;
+            height: 18px;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 6px;
+            padding: 11px 16px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-light { background: #e8eef5; color: var(--text); }
+
+        .status {
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+            line-height: 1.45;
+        }
+
+        .status.success {
+            display: block;
+            color: var(--success);
+            background: #ecfdf3;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status.error {
+            display: block;
+            color: var(--danger);
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+
+        .info-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .info-item {
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .info-item:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .info-item span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        .info-item strong {
+            overflow-wrap: anywhere;
+        }
+
+        .result-link {
+            color: var(--primary);
+            overflow-wrap: anywhere;
+        }
+
+        @media (max-width: 860px) {
+            .workspace { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .page-head { display: block; }
+            .navbar { height: auto; padding: 14px 16px; align-items: flex-start; }
+            .nav-actions { flex-direction: column; align-items: flex-end; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand"><i class="fas fa-images"></i> Upload anh</a>
+        <div class="nav-actions">
+            <span><i class="fas fa-user-circle"></i> {{ session.get('user') }}</span>
+            <a href="/" class="nav-link"><i class="fas fa-arrow-left"></i> Menu</a>
+            <a href="/logout" class="nav-link"><i class="fas fa-sign-out-alt"></i> Dang xuat</a>
+        </div>
+    </nav>
+
+    <main>
+        <div class="page-head">
+            <div>
+                <h1>Upload anh vao OneDrive</h1>
+                <p class="hint">Anh se duoc luu theo thu muc category va ghi thong tin vao database.</p>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <section class="panel">
+                <form id="uploadForm" action="{{ url_for('api_uploadanh') }}" method="post" enctype="multipart/form-data">
+                    <div class="form-row full">
+                        <label>Chon anh</label>
+                        <label class="drop-zone" id="dropZone">
+                            <input id="imageInput" type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" required>
+                            <div id="dropPrompt">
+                                <i class="fas fa-cloud-arrow-up"></i>
+                                <strong>Bam de chon anh</strong>
+                                <span class="hint">PNG, JPG, JPEG, GIF hoac WEBP</span>
+                            </div>
+                            <div class="preview" id="preview">
+                                <img id="previewImg" alt="Preview">
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <label for="title">Title</label>
+                            <input id="title" name="title" type="text" placeholder="VD: Banner trang chu">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="category">Category / thu muc</label>
+                            <input id="category" name="category" type="text" placeholder="VD: banner, product, news" required>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="sortOrder">Sort order</label>
+                            <input id="sortOrder" name="sort_order" type="number" value="0" step="1">
+                        </div>
+
+                        <div class="form-row">
+                            <label>Trang thai</label>
+                            <label class="switch">
+                                <input name="is_active" type="checkbox" value="1" checked>
+                                <span>Dang hoat dong</span>
+                            </label>
+                        </div>
+
+                        <div class="form-row full">
+                            <label for="description">Description</label>
+                            <textarea id="description" name="description" placeholder="Ghi chu noi dung anh"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <button class="btn-light" type="reset"><i class="fas fa-rotate-left"></i> Lam moi</button>
+                        <button class="btn-primary" id="submitBtn" type="submit"><i class="fas fa-upload"></i> Upload</button>
+                    </div>
+
+                    <div id="status" class="status"></div>
+                </form>
+            </section>
+
+            <aside class="panel">
+                <h2 style="margin: 0 0 12px; font-size: 20px;">Thong tin luu</h2>
+                <div class="info-list">
+                    <div class="info-item">
+                        <span>Thu muc goc</span>
+                        <strong>{{ upload_root }}</strong>
+                    </div>
+                    <div class="info-item">
+                        <span>Thu muc con</span>
+                        <strong id="folderPreview">Nhap category de tao thu muc</strong>
+                    </div>
+                    <div class="info-item">
+                        <span>Link anh sau upload</span>
+                        <a id="resultLink" class="result-link" href="#" target="_blank" rel="noopener">Chua co anh</a>
+                    </div>
+                    <div class="info-item">
+                        <span>onedrive_file_id</span>
+                        <strong id="fileId">Chua co du lieu</strong>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const imageInput = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+        const previewImg = document.getElementById('previewImg');
+        const dropPrompt = document.getElementById('dropPrompt');
+        const category = document.getElementById('category');
+        const folderPreview = document.getElementById('folderPreview');
+        const statusBox = document.getElementById('status');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultLink = document.getElementById('resultLink');
+        const fileId = document.getElementById('fileId');
+
+        function setStatus(type, message) {
+            statusBox.className = `status ${type}`;
+            statusBox.textContent = message;
+        }
+
+        function resetStatus() {
+            statusBox.className = 'status';
+            statusBox.textContent = '';
+        }
+
+        function updateFolderPreview() {
+            const value = category.value.trim();
+            folderPreview.textContent = value || 'Nhap category de tao thu muc';
+        }
+
+        imageInput.addEventListener('change', () => {
+            const file = imageInput.files[0];
+            resetStatus();
+            if (!file) {
+                preview.style.display = 'none';
+                dropPrompt.style.display = 'block';
+                return;
+            }
+            previewImg.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            dropPrompt.style.display = 'none';
+        });
+
+        category.addEventListener('input', updateFolderPreview);
+
+        form.addEventListener('reset', () => {
+            setTimeout(() => {
+                preview.style.display = 'none';
+                dropPrompt.style.display = 'block';
+                resultLink.removeAttribute('href');
+                resultLink.textContent = 'Chua co anh';
+                fileId.textContent = 'Chua co du lieu';
+                updateFolderPreview();
+                resetStatus();
+            }, 0);
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            resetStatus();
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Dang upload';
+
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const contentType = response.headers.get('content-type') || '';
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseError) {
+                    const htmlTitle = text.match(/<title[^>]*>(.*?)<\/title>/i);
+                    if (contentType.includes('text/html') || text.trim().startsWith('<')) {
+                        const pageTitle = htmlTitle ? htmlTitle[1].trim() : 'HTML';
+                        if (response.redirected || response.url.includes('/login')) {
+                            throw new Error('Phien dang nhap het han. Hay dang nhap lai roi mo trang /uploadanh.');
+                        }
+                        throw new Error(`API /api/uploadanh dang tra ve trang ${pageTitle}, khong phai JSON. Kiem tra server log hoac mo trang bang /uploadanh.`);
+                    }
+                    throw new Error(text || 'Server khong tra ve JSON hop le');
+                }
+                if (!response.ok) {
+                    throw new Error(data.message || `Upload that bai (${response.status})`);
+                }
+                if (!data.success) {
+                    throw new Error(data.message || 'Upload that bai');
+                }
+                setStatus('success', data.message);
+                resultLink.href = data.image_url;
+                resultLink.textContent = data.image_url;
+                fileId.textContent = data.onedrive_file_id;
+            } catch (error) {
+                setStatus('error', error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+            }
+        });
+
+        updateFolderPreview();
+    </script>
+</body>
+</html>
