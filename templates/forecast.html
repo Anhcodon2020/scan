@@ -38,6 +38,14 @@
         .actual-value { color: #15803d; }
         .ratio-value { color: #b45309; }
         .current-week-col { background: #eff6ff !important; box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.45); }
+        .inventory-table { min-width: 1120px; table-layout: fixed; border-collapse: collapse; margin: 0; }
+        .inventory-table th, .inventory-table td { border: 1px solid #111; padding: 7px 4px; vertical-align: middle; }
+        .inventory-table th { background: #dbe9f7; color: #000; font-size: 1rem; font-weight: 700; text-align: center; }
+        .inventory-table td { background: #fff; color: #000; font-size: 1rem; text-align: center; }
+        .inventory-table .inventory-label { width: 250px; font-weight: 700; text-align: left; white-space: nowrap; }
+        .inventory-table .inventory-label-center { text-align: center; }
+        .inventory-table .inventory-week { width: 105px; }
+        .inventory-table .inventory-day { line-height: 1.15; }
         .detail-table th { background: #f8fafc; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; white-space: nowrap; }
         .empty-state { min-height: 160px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
         @media (max-width: 768px) {
@@ -69,9 +77,14 @@
                 <h3 class="mb-1 fw-bold"><i class="fas fa-table me-2 text-primary"></i>Forecast Dashboard</h3>
                 <div class="text-muted">Dashboard theo 8 tuan lien tiep, bat dau tu tuan hien tai va sum theo CBM.</div>
             </div>
-            <button class="btn btn-outline-primary" @click="loadForecast" :disabled="loading">
-                <i class="fas fa-rotate me-2"></i>Lam moi
-            </button>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-danger" @click="stopCaseStudyRedirect" :disabled="redirectStopped">
+                    <i class="fas fa-stop me-2"></i>{{ redirectStopped ? 'Đã dừng chuyển trang' : 'Stop chuyển Case study' }}
+                </button>
+                <button class="btn btn-outline-primary" @click="loadForecast" :disabled="loading">
+                    <i class="fas fa-rotate me-2"></i>Lam moi
+                </button>
+            </div>
         </div>
 
         <div v-if="message" class="alert alert-warning py-2">{{ message }}</div>
@@ -154,6 +167,75 @@
             </div>
         </section>
 
+        <section class="dashboard-panel mt-3">
+            <div class="forecast-table-wrap">
+                <table class="inventory-table">
+                    <tbody>
+                        <tr>
+                            <th class="inventory-label inventory-label-center">Week</th>
+                            <th class="inventory-week">W25</th>
+                            <th class="inventory-week">W26</th>
+                            <th class="inventory-week">W27</th>
+                            <th class="inventory-week">W28</th>
+                            <th class="inventory-week">W29</th>
+                            <th class="inventory-week">W30</th>
+                            <th class="inventory-week">W31</th>
+                            <th class="inventory-week">W32</th>
+                            <th class="inventory-week">W33</th>
+                        </tr>
+                        <tr>
+                            <th class="inventory-label inventory-label-center">Day</th>
+                            <th></th>
+                            <th class="inventory-day">22 - 28 Jun</th>
+                            <th class="inventory-day">29 Jun - 5<br>July</th>
+                            <th class="inventory-day">6 - 12 July</th>
+                            <th class="inventory-day">13 - 19 July</th>
+                            <th class="inventory-day">20 - 26 July</th>
+                            <th class="inventory-day">27 July - 2 Aug</th>
+                            <th class="inventory-day">3 - 9 Aug</th>
+                            <th class="inventory-day">10 - 16 Aug</th>
+                        </tr>
+                        <tr>
+                            <td class="inventory-label">BBR Inbound Forecast</td>
+                            <td></td>
+                            <td>1632</td>
+                            <td>1051</td>
+                            <td>1628</td>
+                            <td>308</td>
+                            <td>949</td>
+                            <td>809</td>
+                            <td>773</td>
+                            <td>1068</td>
+                        </tr>
+                        <tr>
+                            <td class="inventory-label">Outbound - 5cont per day</td>
+                            <td></td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                            <td>1500</td>
+                        </tr>
+                        <tr>
+                            <td class="inventory-label">Total Inventory</td>
+                            <td>3490</td>
+                            <td>3622</td>
+                            <td>3173</td>
+                            <td>3301</td>
+                            <td>2109</td>
+                            <td>1558</td>
+                            <td>868</td>
+                            <td>140</td>
+                            <td>-292</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
         <section v-if="weeks.length" class="dashboard-panel mt-3 p-3">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                 <div>
@@ -198,10 +280,6 @@
 
     <script src="https://unpkg.com/vue@3"></script>
     <script>
-        setTimeout(() => {
-            window.location.href = '/casestudy';
-        }, 300000);
-
         const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
 
         createApp({
@@ -210,7 +288,17 @@
                 const loading = ref(false);
                 const message = ref('');
                 const generatedAt = ref('');
+                const redirectStopped = ref(false);
                 let refreshTimer = null;
+                let caseStudyTimer = null;
+
+                const stopCaseStudyRedirect = () => {
+                    if (caseStudyTimer) {
+                        clearTimeout(caseStudyTimer);
+                        caseStudyTimer = null;
+                    }
+                    redirectStopped.value = true;
+                };
 
                 const loadForecast = async () => {
                     loading.value = true;
@@ -302,10 +390,14 @@
                 onMounted(() => {
                     loadForecast();
                     refreshTimer = setInterval(loadForecast, 15 * 60 * 1000);
+                    caseStudyTimer = setTimeout(() => {
+                        window.location.href = '/casestudy';
+                    }, 5 * 60 * 1000);
                 });
 
                 onUnmounted(() => {
                     if (refreshTimer) clearInterval(refreshTimer);
+                    if (caseStudyTimer) clearTimeout(caseStudyTimer);
                 });
 
                 return {
@@ -313,9 +405,11 @@
                     loading,
                     message,
                     generatedAt,
+                    redirectStopped,
                     grandTotal,
                     displayRange,
                     loadForecast,
+                    stopCaseStudyRedirect,
                     formatNumber,
                     formatPercent
                 };
