@@ -37,6 +37,21 @@ _refix_cache = {}
 
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 IMAGE_UPLOAD_TABLE = os.getenv('IMAGE_UPLOAD_TABLE', 'training_images_1')
+OUTBOUND_PRODUCT_TABLE = os.getenv('OUTBOUND_PRODUCT_TABLE', 'wms_db.outbound_product')
+
+def _qualified_table_name(value, sqlite_fallback=None):
+    if db.engine.dialect.name == 'sqlite' and sqlite_fallback:
+        value = sqlite_fallback
+    parts = (value or '').split('.')
+    if not parts or len(parts) > 2:
+        raise ValueError('Ten bang khong hop le')
+    for part in parts:
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', part or ''):
+            raise ValueError('Ten bang khong hop le')
+    return '.'.join(parts)
+
+def _outbound_product_table_name():
+    return _qualified_table_name(OUTBOUND_PRODUCT_TABLE, 'outbound_product')
 
 def _default_onedrive_upload_root():
     app_uploads = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'uploads')
@@ -1122,6 +1137,73 @@ def get_invetory_whs_list():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/invetory_whs/export')
+def export_invetory_whs():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        rows = (
+            db.session.query(InventoryWhs, Location)
+            .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
+            .order_by(InventoryWhs.id.desc())
+            .all()
+        )
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Inventory WHS'
+
+        headers = ['ID', 'Location', 'Description', 'SKU', 'Sub Loc', 'Qty']
+        worksheet.append(headers)
+
+        header_fill = PatternFill('solid', fgColor='1F4E78')
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = Font(color='FFFFFF', bold=True)
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        for item, location in rows:
+            worksheet.append([
+                item.id,
+                item.loc_id or '',
+                location.description if location else '',
+                item.sku or '',
+                item.sub_loc if item.sub_loc is not None else 0,
+                item.qty if item.qty is not None else 0
+            ])
+            for cell in worksheet[worksheet.max_row][1:4]:
+                cell.data_type = 's'
+
+        worksheet.freeze_panes = 'A2'
+        worksheet.auto_filter.ref = worksheet.dimensions
+        worksheet.column_dimensions['A'].width = 10
+        worksheet.column_dimensions['B'].width = 20
+        worksheet.column_dimensions['C'].width = 36
+        worksheet.column_dimensions['D'].width = 24
+        worksheet.column_dimensions['E'].width = 14
+        worksheet.column_dimensions['F'].width = 14
+
+        for row in worksheet.iter_rows(min_row=2):
+            row[4].number_format = '0'
+            row[5].number_format = '0'
+
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        filename = f"inventory_whs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        return Response(
+            output.getvalue(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/invetory_whs/save', methods=['POST'])
 def save_invetory_whs():
     if 'user' not in session:
@@ -1603,6 +1685,12 @@ def outbound_page():
     if 'user' not in session: return redirect(url_for('login'))
     return render_template('outbound.html')
 
+@app.route('/outboundproduct')
+@app.route('/outbound-product')
+def outbound_product_page():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template('outboundproduct.html')
+
 @app.route('/dashboarpallet')
 @app.route('/dashboardpallet')
 def dashboard_pallet_page():
@@ -1913,6 +2001,215 @@ def outbound_jobnos():
         rows = db.session.execute(query).fetchall()
         jobnos = [r[0] for r in rows if r[0]]
         return jsonify({'success': True, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+def _outbound_product_period(reference_date=None):
+    base_date = reference_date or datetime.now().date()
+    if base_date.day <= 20:
+        period_end = base_date.replace(day=20)
+        prev_month_last = period_end.replace(day=1) - timedelta(days=1)
+        period_start = prev_month_last.replace(day=21)
+    else:
+        next_month = (base_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+        period_start = base_date.replace(day=21)
+        period_end = next_month.replace(day=20)
+    return period_start, period_end
+
+@app.route('/api/outbound-product/packing-dates')
+def outbound_product_packing_dates():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    try:
+        query = text("""
+            SELECT DISTINCT DATE(datestuff) AS packing_date
+            FROM outbound
+            WHERE container IS NOT NULL
+              AND TRIM(container) != ''
+              AND datestuff IS NOT NULL
+            ORDER BY packing_date DESC
+        """)
+        rows = db.session.execute(query).fetchall()
+        packing_dates = [str(r[0]) for r in rows if r[0]]
+        return jsonify({'success': True, 'packing_dates': packing_dates})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound-product/jobnos')
+def outbound_product_jobnos():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    packing_date = request.args.get('date')
+    if not packing_date:
+        return jsonify({'success': False, 'message': 'Thieu ngay dong hang'}), 400
+
+    try:
+        query = text("""
+            SELECT DISTINCT jobno
+            FROM outbound
+            WHERE container IS NOT NULL
+              AND TRIM(container) != ''
+              AND DATE(datestuff) = :packing_date
+            ORDER BY jobno
+        """)
+        rows = db.session.execute(query, {'packing_date': packing_date}).fetchall()
+        jobnos = [r[0] for r in rows if r[0]]
+        return jsonify({'success': True, 'date': packing_date, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound-product/details')
+def outbound_product_details():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    packing_date = request.args.get('date')
+    jobno = request.args.get('jobno')
+    if not packing_date:
+        return jsonify({'success': False, 'message': 'Thieu ngay dong hang'}), 400
+
+    try:
+        product_table = _outbound_product_table_name()
+        params = {'packing_date': packing_date}
+        job_filter = ''
+        if jobno:
+            params['jobno'] = jobno
+            job_filter = 'AND jobno = :jobno'
+
+        query = text(f"""
+            SELECT
+                src.jobno,
+                src.cont,
+                src.date_stuff,
+                COALESCE(saved.nhanvien, '') AS nhanvien
+            FROM (
+                SELECT DISTINCT
+                    jobno,
+                    TRIM(container) AS cont,
+                    DATE(datestuff) AS date_stuff
+                FROM outbound
+                WHERE container IS NOT NULL
+                  AND TRIM(container) != ''
+                  AND DATE(datestuff) = :packing_date
+                  {job_filter}
+            ) src
+            LEFT JOIN (
+                SELECT jobno, cont, date_stuff, MAX(nhanvien) AS nhanvien
+                FROM {product_table}
+                GROUP BY jobno, cont, date_stuff
+            ) saved
+              ON saved.jobno = src.jobno
+             AND saved.cont = src.cont
+             AND saved.date_stuff = src.date_stuff
+            ORDER BY src.jobno, src.cont
+        """)
+        rows = db.session.execute(query, params).fetchall()
+        data = [
+            {
+                'jobno': row.jobno,
+                'cont': row.cont,
+                'date_stuff': str(row.date_stuff) if row.date_stuff else '',
+                'nhanvien': row.nhanvien or ''
+            }
+            for row in rows
+        ]
+        return jsonify({'success': True, 'date': packing_date, 'jobno': jobno or '', 'rows': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound-product/save', methods=['POST'])
+def outbound_product_save():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json(silent=True) or {}
+    jobno = str(data.get('jobno') or '').strip()
+    cont = str(data.get('cont') or '').strip()
+    date_stuff = str(data.get('date_stuff') or '').strip()
+    nhanvien = str(data.get('nhanvien') or '').strip()
+
+    if not jobno or not cont or not date_stuff or not nhanvien:
+        return jsonify({'success': False, 'message': 'Vui long nhap du Job No, Cont, ngay dong hang va nhan vien'}), 400
+
+    try:
+        datetime.strptime(date_stuff, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Ngay dong hang khong hop le'}), 400
+
+    try:
+        product_table = _outbound_product_table_name()
+        existing = db.session.execute(text(f"""
+            SELECT id
+            FROM {product_table}
+            WHERE jobno = :jobno
+              AND cont = :cont
+              AND date_stuff = :date_stuff
+            ORDER BY id DESC
+            LIMIT 1
+        """), {'jobno': jobno, 'cont': cont, 'date_stuff': date_stuff}).fetchone()
+
+        params = {'jobno': jobno, 'cont': cont, 'date_stuff': date_stuff, 'nhanvien': nhanvien}
+        if existing:
+            params['id'] = existing.id
+            db.session.execute(text(f"""
+                UPDATE {product_table}
+                SET nhanvien = :nhanvien
+                WHERE id = :id
+            """), params)
+        else:
+            db.session.execute(text(f"""
+                INSERT INTO {product_table} (jobno, cont, date_stuff, nhanvien)
+                VALUES (:jobno, :cont, :date_stuff, :nhanvien)
+            """), params)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Da luu thong tin dong hang'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound-product/stats')
+def outbound_product_stats():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    reference = request.args.get('date')
+    reference_date = None
+    if reference:
+        try:
+            reference_date = datetime.strptime(reference, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Ngay tham chieu khong hop le'}), 400
+
+    start_date, end_date = _outbound_product_period(reference_date)
+
+    try:
+        product_table = _outbound_product_table_name()
+        query = text(f"""
+            SELECT
+                nhanvien,
+                COUNT(*) AS total_cont,
+                COUNT(DISTINCT jobno) AS total_job
+            FROM {product_table}
+            WHERE date_stuff BETWEEN :start_date AND :end_date
+              AND nhanvien IS NOT NULL
+              AND TRIM(nhanvien) != ''
+            GROUP BY nhanvien
+            ORDER BY total_cont DESC, nhanvien
+        """)
+        rows = db.session.execute(query, {
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat()
+        }).fetchall()
+        stats = [
+            {
+                'nhanvien': row.nhanvien,
+                'total_cont': int(row.total_cont or 0),
+                'total_job': int(row.total_job or 0)
+            }
+            for row in rows
+        ]
+        return jsonify({
+            'success': True,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'rows': stats,
+            'total_cont': sum(item['total_cont'] for item in stats),
+            'total_job': sum(item['total_job'] for item in stats)
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

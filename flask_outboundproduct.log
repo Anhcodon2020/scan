@@ -1,0 +1,4 @@
+--- Starting app and checking database connection... ---
+Database connection OK.
+ * Serving Flask app 'app'
+ * Debug mode: off

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outbound Product</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #f4f6f9;
+            color: #273142;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+        .navbar-brand { font-weight: 700; letter-spacing: 0.4px; }
+        .page-shell { max-width: 1180px; }
+        .panel {
+            background: #fff;
+            border: 1px solid #e6eaf0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(20, 30, 50, 0.04);
+        }
+        .metric {
+            min-height: 104px;
+            border-left: 4px solid #0d6efd;
+        }
+        .metric.success { border-color: #198754; }
+        .metric .label {
+            color: #667085;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .metric .value {
+            font-size: 1.85rem;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+        .table thead th {
+            background: #f8f9fc;
+            color: #667085;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .empty-state {
+            min-height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667085;
+        }
+        .badge-soft {
+            background: #eef4ff;
+            color: #175cd3;
+            border: 1px solid #d1e0ff;
+        }
+        .employee-input { min-width: 180px; }
+    </style>
+</head>
+<body>
+{% raw %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-warehouse me-2"></i>WAREHOUSE SCAN</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/outbound">Outbound</a></li>
+                    <li class="nav-item"><a class="nav-link active" aria-current="page" href="/outboundproduct">Outbound Product</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/logout">Đăng xuất</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main id="app" class="container-fluid page-shell px-4 pb-5">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+            <div>
+                <h3 class="mb-1 fw-bold"><i class="fas fa-truck-ramp-box me-2 text-primary"></i>Outbound Product</h3>
+                <div class="text-muted">Cập nhật nhân viên đóng hàng theo Job No và số cont.</div>
+            </div>
+            <button class="btn btn-outline-primary" @click="refreshAll" :disabled="loading || loadingDates || savingKey">
+                <i class="fas fa-rotate me-2"></i>Làm mới
+            </button>
+        </div>
+
+        <section class="panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold text-secondary">Ngày đóng hàng</label>
+                    <select class="form-select" v-model="selectedDate" @change="handleDateChange" :disabled="loadingDates">
+                        <option value="">-- Chọn ngày --</option>
+                        <option v-for="date in packingDates" :key="date" :value="date">{{ formatDate(date) }}</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold text-secondary">Job No có số cont</label>
+                    <select class="form-select" v-model="selectedJob" @change="loadDetails" :disabled="!selectedDate || loading">
+                        <option value="">-- Tất cả Job No --</option>
+                        <option v-for="job in jobnos" :key="job" :value="job">{{ job }}</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <div v-if="loading || loadingDates" class="text-muted">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Đang tải dữ liệu...
+                    </div>
+                    <div v-else-if="message" class="alert py-2 mb-0" :class="messageType === 'success' ? 'alert-success' : 'alert-warning'">
+                        {{ message }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="row g-3 mb-3">
+            <div class="col-md-6">
+                <div class="panel metric p-3">
+                    <div class="label">Kỳ thống kê</div>
+                    <div class="value mt-2">{{ formatDate(statsStart) }} - {{ formatDate(statsEnd) }}</div>
+                    <div class="text-muted mt-2">Tính theo ngày đóng hàng đã chọn hoặc ngày hiện tại.</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="panel metric success p-3">
+                    <div class="label">Tổng cont</div>
+                    <div class="value mt-2">{{ formatNumber(totalCont, 0) }}</div>
+                    <div class="text-muted mt-2">Đã lưu trong outbound_product</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="panel metric p-3">
+                    <div class="label">Tổng job</div>
+                    <div class="value mt-2">{{ formatNumber(totalJob, 0) }}</div>
+                    <div class="text-muted mt-2">Cộng theo từng nhân viên</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel mb-3">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-3 border-bottom">
+                <div class="fw-semibold">
+                    Danh sách cont
+                    <span v-if="selectedDate" class="badge badge-soft ms-2">{{ formatDate(selectedDate) }}</span>
+                    <span v-if="selectedJob" class="badge bg-secondary ms-2">{{ selectedJob }}</span>
+                </div>
+                <div class="text-muted small">{{ rows.length }} dòng</div>
+            </div>
+            <div v-if="rows.length" class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Job No</th>
+                            <th>Số cont</th>
+                            <th>Ngày đóng hàng</th>
+                            <th>Nhân viên</th>
+                            <th class="text-end">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in rows" :key="row.key">
+                            <td class="fw-semibold">{{ row.jobno }}</td>
+                            <td>{{ row.cont }}</td>
+                            <td>{{ formatDate(row.date_stuff) }}</td>
+                            <td>
+                                <input class="form-control employee-input" v-model.trim="row.nhanvien" placeholder="Tên nhân viên" @keyup.enter="saveRow(row)">
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-success" @click="saveRow(row)" :disabled="!row.nhanvien || savingKey === row.key">
+                                    <span v-if="savingKey === row.key" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    <i v-else class="fas fa-floppy-disk me-1"></i>Lưu
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div v-else class="empty-state text-center px-3">
+                <div>
+                    <i class="fas fa-clipboard-list fa-2x mb-3 text-secondary"></i>
+                    <div>{{ selectedDate ? 'Không có cont phù hợp cho lựa chọn này.' : 'Chọn ngày đóng hàng để xem Job No có số cont.' }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-3 border-bottom">
+                <div class="fw-semibold">Thống kê nhân viên</div>
+                <div class="text-muted small">{{ formatDate(statsStart) }} - {{ formatDate(statsEnd) }}</div>
+            </div>
+            <div v-if="stats.length" class="table-responsive">
+                <table class="table table-striped align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nhân viên</th>
+                            <th class="text-end">Số cont</th>
+                            <th class="text-end">Số job</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="item in stats" :key="item.nhanvien">
+                            <td class="fw-semibold">{{ item.nhanvien }}</td>
+                            <td class="text-end">{{ formatNumber(item.total_cont, 0) }}</td>
+                            <td class="text-end">{{ formatNumber(item.total_job, 0) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div v-else class="empty-state text-center px-3">
+                <div>Chưa có dữ liệu thống kê trong kỳ này.</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://unpkg.com/vue@3"></script>
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const packingDates = ref([]);
+                const selectedDate = ref('');
+                const jobnos = ref([]);
+                const selectedJob = ref('');
+                const rows = ref([]);
+                const stats = ref([]);
+                const statsStart = ref('');
+                const statsEnd = ref('');
+                const totalCont = ref(0);
+                const totalJob = ref(0);
+                const loading = ref(false);
+                const loadingDates = ref(false);
+                const savingKey = ref('');
+                const message = ref('');
+                const messageType = ref('warning');
+
+                const setMessage = (text, type = 'warning') => {
+                    message.value = text || '';
+                    messageType.value = type;
+                };
+
+                const makeKey = (row) => `${row.jobno}|${row.cont}|${row.date_stuff}`;
+
+                const fetchDates = async () => {
+                    loadingDates.value = true;
+                    setMessage('');
+                    try {
+                        const res = await fetch('/api/outbound-product/packing-dates');
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không lấy được ngày đóng hàng.');
+                        packingDates.value = data.packing_dates || [];
+                        if (!packingDates.value.includes(selectedDate.value)) {
+                            selectedDate.value = '';
+                            selectedJob.value = '';
+                            jobnos.value = [];
+                            rows.value = [];
+                        }
+                        if (!packingDates.value.length) setMessage('Không có ngày đóng hàng nào đã có số cont.');
+                    } catch (err) {
+                        setMessage(err.message || 'Lỗi kết nối máy chủ.');
+                    } finally {
+                        loadingDates.value = false;
+                    }
+                };
+
+                const fetchJobnos = async () => {
+                    if (!selectedDate.value) {
+                        jobnos.value = [];
+                        selectedJob.value = '';
+                        rows.value = [];
+                        return;
+                    }
+                    loading.value = true;
+                    setMessage('');
+                    try {
+                        const res = await fetch(`/api/outbound-product/jobnos?date=${encodeURIComponent(selectedDate.value)}`);
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không lấy được Job No.');
+                        jobnos.value = data.jobnos || [];
+                        if (!jobnos.value.includes(selectedJob.value)) selectedJob.value = '';
+                        if (!jobnos.value.length) setMessage('Không có Job No nào có số cont trong ngày này.');
+                    } catch (err) {
+                        setMessage(err.message || 'Lỗi kết nối máy chủ.');
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const loadDetails = async () => {
+                    if (!selectedDate.value) {
+                        rows.value = [];
+                        return;
+                    }
+                    loading.value = true;
+                    setMessage('');
+                    try {
+                        let url = `/api/outbound-product/details?date=${encodeURIComponent(selectedDate.value)}`;
+                        if (selectedJob.value) url += `&jobno=${encodeURIComponent(selectedJob.value)}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không tải được danh sách cont.');
+                        rows.value = (data.rows || []).map((row) => ({ ...row, key: makeKey(row) }));
+                        if (!rows.value.length) setMessage('Không có cont phù hợp cho lựa chọn này.');
+                    } catch (err) {
+                        rows.value = [];
+                        setMessage(err.message || 'Lỗi kết nối máy chủ.');
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const fetchStats = async () => {
+                    try {
+                        let url = '/api/outbound-product/stats';
+                        if (selectedDate.value) url += `?date=${encodeURIComponent(selectedDate.value)}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không tải được thống kê.');
+                        stats.value = data.rows || [];
+                        statsStart.value = data.start_date || '';
+                        statsEnd.value = data.end_date || '';
+                        totalCont.value = Number(data.total_cont || 0);
+                        totalJob.value = Number(data.total_job || 0);
+                    } catch (err) {
+                        setMessage(err.message || 'Không tải được thống kê.');
+                    }
+                };
+
+                const saveRow = async (row) => {
+                    if (!row.nhanvien) return;
+                    savingKey.value = row.key;
+                    setMessage('');
+                    try {
+                        const res = await fetch('/api/outbound-product/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jobno: row.jobno,
+                                cont: row.cont,
+                                date_stuff: row.date_stuff,
+                                nhanvien: row.nhanvien
+                            })
+                        });
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Không lưu được dữ liệu.');
+                        setMessage(data.message || 'Đã lưu.', 'success');
+                        await fetchStats();
+                    } catch (err) {
+                        setMessage(err.message || 'Không lưu được dữ liệu.');
+                    } finally {
+                        savingKey.value = '';
+                    }
+                };
+
+                const handleDateChange = async () => {
+                    selectedJob.value = '';
+                    rows.value = [];
+                    await fetchJobnos();
+                    await loadDetails();
+                    await fetchStats();
+                };
+
+                const refreshAll = async () => {
+                    await fetchDates();
+                    if (selectedDate.value) {
+                        await fetchJobnos();
+                        await loadDetails();
+                    }
+                    await fetchStats();
+                };
+
+                const formatDate = (value) => {
+                    if (!value) return '';
+                    const parts = String(value).split('-');
+                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    return value;
+                };
+
+                const formatNumber = (value, maxFrac = 0) => {
+                    const num = Number(value || 0);
+                    return num.toLocaleString('en-US', { maximumFractionDigits: maxFrac });
+                };
+
+                onMounted(async () => {
+                    await fetchDates();
+                    await fetchStats();
+                });
+
+                return {
+                    packingDates,
+                    selectedDate,
+                    jobnos,
+                    selectedJob,
+                    rows,
+                    stats,
+                    statsStart,
+                    statsEnd,
+                    totalCont,
+                    totalJob,
+                    loading,
+                    loadingDates,
+                    savingKey,
+                    message,
+                    messageType,
+                    fetchDates,
+                    fetchJobnos,
+                    loadDetails,
+                    saveRow,
+                    handleDateChange,
+                    refreshAll,
+                    formatDate,
+                    formatNumber
+                };
+            }
+        }).mount('#app');
+    </script>
+{% endraw %}
+</body>
+</html>
