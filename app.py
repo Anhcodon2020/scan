@@ -1988,6 +1988,99 @@ def forecast_data():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/forecast/overdue-no-cont')
+def forecast_overdue_no_cont():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    today = datetime.now().date()
+    cutoff_date = today - timedelta(days=14)
+
+    def to_float(value):
+        return round(float(value or 0), 3)
+
+    try:
+        query = text("""
+            SELECT
+                ob.jobno,
+                ob.parentpo,
+                ob.sku,
+                ob.total_carton,
+                ob.total_cbm,
+                ib.datercv
+            FROM (
+                SELECT
+                    COALESCE(TRIM(jobno), '') AS jobno,
+                    COALESCE(TRIM(parentpo), '') AS parentpo,
+                    COALESCE(TRIM(sku), '') AS sku,
+                    SUM(COALESCE(carton, 0)) AS total_carton,
+                    SUM(COALESCE(cbm, 0)) AS total_cbm
+                FROM outbound
+                WHERE (container IS NULL OR TRIM(container) = '')
+                  AND parentpo IS NOT NULL
+                  AND TRIM(parentpo) != ''
+                  AND sku IS NOT NULL
+                  AND TRIM(sku) != ''
+                GROUP BY COALESCE(TRIM(jobno), ''), COALESCE(TRIM(parentpo), ''), COALESCE(TRIM(sku), '')
+            ) ob
+            JOIN (
+                SELECT
+                    COALESCE(TRIM(po), '') AS parentpo,
+                    COALESCE(TRIM(sku), '') AS sku,
+                    MIN(datercv) AS datercv
+                FROM inbound
+                WHERE datercv IS NOT NULL
+                  AND po IS NOT NULL
+                  AND TRIM(po) != ''
+                  AND sku IS NOT NULL
+                  AND TRIM(sku) != ''
+                GROUP BY COALESCE(TRIM(po), ''), COALESCE(TRIM(sku), '')
+            ) ib
+              ON ib.parentpo = ob.parentpo
+             AND ib.sku = ob.sku
+            WHERE ib.datercv < :cutoff_date
+            ORDER BY ib.datercv ASC, ob.jobno, ob.parentpo, ob.sku
+        """)
+        rows = db.session.execute(query, {'cutoff_date': cutoff_date}).fetchall()
+        data = []
+        total_carton = 0
+        total_cbm = 0.0
+
+        for row in rows:
+            datercv = row.datercv
+            if hasattr(datercv, 'date'):
+                datercv = datercv.date()
+            if isinstance(datercv, str):
+                datercv_date = datetime.strptime(datercv[:10], '%Y-%m-%d').date()
+            else:
+                datercv_date = datercv
+
+            carton = int(row.total_carton or 0)
+            cbm = to_float(row.total_cbm)
+            total_carton += carton
+            total_cbm = round(total_cbm + cbm, 3)
+            data.append({
+                'jobno': row.jobno,
+                'parentpo_sku': f"{row.parentpo}_{row.sku}",
+                'parentpo': row.parentpo,
+                'sku': row.sku,
+                'datercv': datercv_date.isoformat() if datercv_date else '',
+                'days_in_stock': (today - datercv_date).days if datercv_date else '',
+                'carton': carton,
+                'cbm': cbm
+            })
+
+        return jsonify({
+            'success': True,
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'today': today.isoformat(),
+            'cutoff_date': cutoff_date.isoformat(),
+            'rows': data,
+            'total_carton': total_carton,
+            'total_cbm': total_cbm
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/outbound/jobnos')
 def outbound_jobnos():
     if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
