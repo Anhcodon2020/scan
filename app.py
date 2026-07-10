@@ -1342,15 +1342,16 @@ def update_scan_sku_location():
         _refix_cache[refix_val] = sku
 
     try:
+        updated_at = datetime.now()
         item = InventoryWhs.query.filter_by(loc_id=loc_id, sku=sku, sub_loc=sub_location).first()
         if item:
             item.qty = (item.qty or 0) + qty
         else:
             item = InventoryWhs(loc_id=loc_id, sku=sku, sub_loc=sub_location, qty=qty)
             db.session.add(item)
+        item.date_update = updated_at
 
         db.session.commit()
-        updated_at = datetime.now()
 
         return jsonify({
             'success': True,

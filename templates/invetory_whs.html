@@ -24,6 +24,10 @@
         .btn:disabled { opacity: 0.65; cursor: not-allowed; }
         .btn:hover { opacity: 0.9; }
         .readonly-note { background: #eef6ff; border-left: 4px solid #0d6efd; color: #1f4f82; padding: 10px 12px; border-radius: 4px; margin-bottom: 15px; }
+        .search-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .search-bar label { font-weight: 700; color: #333; }
+        .search-bar input { flex: 1; min-width: 220px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px; }
+        .search-count { color: #666; font-size: 14px; white-space: nowrap; }
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
         .modal-content { background-color: #fefefe; margin: 7% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
         .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
@@ -60,6 +64,12 @@
         {% if session.get('role') not in ['admin', 'scanner'] %}
         <div class="readonly-note">T&agrave;i kho&#7843;n c&#7911;a b&#7841;n ch&#7881; c&oacute; quy&#7873;n xem Inventory WHS.</div>
         {% endif %}
+
+        <div class="search-bar">
+            <label for="skuSearch">T&igrave;m SKU</label>
+            <input type="text" id="skuSearch" inputmode="numeric" autocomplete="off" placeholder="Nhap so SKU de tim">
+            <span id="searchCount" class="search-count"></span>
+        </div>
 
         <div class="table-wrap">
             <table>
@@ -118,7 +128,10 @@
     <script>
         const canEdit = ["admin", "scanner"].includes("{{ session.get('role') }}");
         const modal = document.getElementById('inventoryModal');
+        const skuSearchInput = document.getElementById('skuSearch');
+        const searchCount = document.getElementById('searchCount');
         let locationOptions = [];
+        let inventoryItems = [];
 
         function setTextCell(row, value, alignRight = false) {
             const cell = document.createElement('td');
@@ -140,6 +153,74 @@
             });
         }
 
+        function getFilteredItems() {
+            const searchValue = skuSearchInput.value.trim().toLowerCase();
+            if (!searchValue) return inventoryItems;
+
+            return inventoryItems.filter(item => String(item.sku || '').toLowerCase().includes(searchValue));
+        }
+
+        function renderInventoryTable() {
+            const tbody = document.getElementById('inventoryTableBody');
+            const items = getFilteredItems();
+            const searchValue = skuSearchInput.value.trim();
+            tbody.innerHTML = '';
+
+            searchCount.textContent = searchValue
+                ? `${items.length}/${inventoryItems.length} ket qua`
+                : `${inventoryItems.length} SKU`;
+
+            if (inventoryItems.length === 0) {
+                const row = document.createElement('tr');
+                const cell = setTextCell(row, 'Chua co du lieu');
+                cell.colSpan = canEdit ? 7 : 6;
+                cell.style.textAlign = 'center';
+                tbody.appendChild(row);
+                return;
+            }
+
+            if (items.length === 0) {
+                const row = document.createElement('tr');
+                const cell = setTextCell(row, 'Khong tim thay SKU phu hop');
+                cell.colSpan = canEdit ? 7 : 6;
+                cell.style.textAlign = 'center';
+                tbody.appendChild(row);
+                return;
+            }
+
+            items.forEach(item => {
+                const row = document.createElement('tr');
+                setTextCell(row, item.id);
+                const locCell = setTextCell(row, item.location_code);
+                locCell.style.fontWeight = '700';
+                setTextCell(row, item.location_description);
+                setTextCell(row, item.sku);
+                setTextCell(row, item.sub_loc, true);
+                setTextCell(row, item.qty, true);
+
+                if (canEdit) {
+                    const actionCell = document.createElement('td');
+                    actionCell.style.textAlign = 'center';
+
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'btn btn-edit';
+                    editBtn.textContent = 'Sua';
+                    editBtn.onclick = () => editInventory(item);
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'btn btn-delete';
+                    deleteBtn.textContent = 'Xoa';
+                    deleteBtn.onclick = () => deleteInventory(item.id, item.sku);
+
+                    actionCell.appendChild(editBtn);
+                    actionCell.appendChild(deleteBtn);
+                    row.appendChild(actionCell);
+                }
+
+                tbody.appendChild(row);
+            });
+        }
+
         function loadInventory() {
             fetch('/api/invetory_whs/list')
                 .then(r => r.json())
@@ -157,48 +238,9 @@
                     }
 
                     locationOptions = data.locations || [];
+                    inventoryItems = data.items || [];
                     renderLocationOptions();
-
-                    if (data.items.length === 0) {
-                        const row = document.createElement('tr');
-                        const cell = setTextCell(row, 'Chua co du lieu');
-                        cell.colSpan = canEdit ? 7 : 6;
-                        cell.style.textAlign = 'center';
-                        tbody.appendChild(row);
-                        return;
-                    }
-
-                    data.items.forEach(item => {
-                        const row = document.createElement('tr');
-                        setTextCell(row, item.id);
-                        const locCell = setTextCell(row, item.location_code);
-                        locCell.style.fontWeight = '700';
-                        setTextCell(row, item.location_description);
-                        setTextCell(row, item.sku);
-                        setTextCell(row, item.sub_loc, true);
-                        setTextCell(row, item.qty, true);
-
-                        if (canEdit) {
-                            const actionCell = document.createElement('td');
-                            actionCell.style.textAlign = 'center';
-
-                            const editBtn = document.createElement('button');
-                            editBtn.className = 'btn btn-edit';
-                            editBtn.textContent = 'Sua';
-                            editBtn.onclick = () => editInventory(item);
-
-                            const deleteBtn = document.createElement('button');
-                            deleteBtn.className = 'btn btn-delete';
-                            deleteBtn.textContent = 'Xoa';
-                            deleteBtn.onclick = () => deleteInventory(item.id, item.sku);
-
-                            actionCell.appendChild(editBtn);
-                            actionCell.appendChild(deleteBtn);
-                            row.appendChild(actionCell);
-                        }
-
-                        tbody.appendChild(row);
-                    });
+                    renderInventoryTable();
                 });
         }
 
@@ -319,6 +361,7 @@
             }
         }
 
+        skuSearchInput.addEventListener('input', renderInventoryTable);
         loadInventory();
     </script>
 </body>
