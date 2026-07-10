@@ -34,6 +34,7 @@ db.init_app(app)
 
 # Cache cục bộ cho MasterData để giảm query DB khi scan liên tục
 _refix_cache = {}
+_inventory_whs_date_update_checked = False
 
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 IMAGE_UPLOAD_TABLE = os.getenv('IMAGE_UPLOAD_TABLE', 'training_images_1')
@@ -73,6 +74,42 @@ def _image_upload_table_name():
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', IMAGE_UPLOAD_TABLE):
         raise ValueError('IMAGE_UPLOAD_TABLE khong hop le')
     return IMAGE_UPLOAD_TABLE
+
+def _ensure_inventory_whs_date_update_column():
+    global _inventory_whs_date_update_checked
+    if _inventory_whs_date_update_checked:
+        return
+
+    if db.engine.dialect.name == 'sqlite':
+        existing_columns = {
+            row[1]
+            for row in db.session.execute(text("PRAGMA table_info(inventory_whs)")).fetchall()
+        }
+        column_def = 'DATETIME'
+    elif db.engine.dialect.name in ('mysql', 'mariadb'):
+        existing_columns = {
+            row[0]
+            for row in db.session.execute(text("SHOW COLUMNS FROM inventory_whs")).fetchall()
+        }
+        column_def = 'DATETIME'
+    else:
+        existing_columns = {
+            row[0]
+            for row in db.session.execute(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'inventory_whs'
+                """)
+            ).fetchall()
+        }
+        column_def = 'TIMESTAMP'
+
+    if 'date_update' not in existing_columns:
+        db.session.execute(text(f"ALTER TABLE inventory_whs ADD COLUMN date_update {column_def}"))
+        db.session.commit()
+
+    _inventory_whs_date_update_checked = True
 
 def _ensure_image_upload_table(table_name):
     if db.engine.dialect.name == 'sqlite':
@@ -1100,6 +1137,7 @@ def get_invetory_whs_list():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
     try:
+        _ensure_inventory_whs_date_update_column()
         rows = (
             db.session.query(InventoryWhs, Location)
             .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
@@ -1115,7 +1153,8 @@ def get_invetory_whs_list():
                 'location_description': location.description if location else '',
                 'sku': item.sku or '',
                 'sub_loc': item.sub_loc if item.sub_loc is not None else 0,
-                'qty': item.qty if item.qty is not None else 0
+                'qty': item.qty if item.qty is not None else 0,
+                'date_update': item.date_update.strftime('%H:%M:%S %d/%m/%Y') if item.date_update else ''
             })
 
         locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
@@ -1146,6 +1185,7 @@ def export_invetory_whs():
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
 
+        _ensure_inventory_whs_date_update_column()
         rows = (
             db.session.query(InventoryWhs, Location)
             .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
@@ -1157,7 +1197,7 @@ def export_invetory_whs():
         worksheet = workbook.active
         worksheet.title = 'Inventory WHS'
 
-        headers = ['ID', 'Location', 'Description', 'SKU', 'Sub Loc', 'Qty']
+        headers = ['ID', 'Location', 'Description', 'SKU', 'Sub Loc', 'Qty', 'Date Update']
         worksheet.append(headers)
 
         header_fill = PatternFill('solid', fgColor='1F4E78')
@@ -1173,7 +1213,8 @@ def export_invetory_whs():
                 location.description if location else '',
                 item.sku or '',
                 item.sub_loc if item.sub_loc is not None else 0,
-                item.qty if item.qty is not None else 0
+                item.qty if item.qty is not None else 0,
+                item.date_update.strftime('%H:%M:%S %d/%m/%Y') if item.date_update else ''
             ])
             for cell in worksheet[worksheet.max_row][1:4]:
                 cell.data_type = 's'
@@ -1186,6 +1227,7 @@ def export_invetory_whs():
         worksheet.column_dimensions['D'].width = 24
         worksheet.column_dimensions['E'].width = 14
         worksheet.column_dimensions['F'].width = 14
+        worksheet.column_dimensions['G'].width = 22
 
         for row in worksheet.iter_rows(min_row=2):
             row[4].number_format = '0'
@@ -1233,6 +1275,7 @@ def save_invetory_whs():
         return jsonify({'success': False, 'message': 'Location not found'}), 404
 
     try:
+        _ensure_inventory_whs_date_update_column()
         if item_id:
             item = InventoryWhs.query.get(item_id)
             if not item:
@@ -1245,6 +1288,7 @@ def save_invetory_whs():
         item.sku = sku
         item.sub_loc = sub_loc
         item.qty = qty
+        item.date_update = datetime.now()
 
         db.session.commit()
         return jsonify({'success': True})
@@ -1342,6 +1386,7 @@ def update_scan_sku_location():
         _refix_cache[refix_val] = sku
 
     try:
+        _ensure_inventory_whs_date_update_column()
         updated_at = datetime.now()
         item = InventoryWhs.query.filter_by(loc_id=loc_id, sku=sku, sub_loc=sub_location).first()
         if item:
