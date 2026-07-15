@@ -19,6 +19,7 @@
         .button-bar .btn { font-size: 16px; padding: 10px 20px; }
         .btn-add { background-color: #28a745; }
         .btn-export { background-color: #217346; }
+        .btn-sort { background-color: #0d6efd; }
         .btn-edit { background-color: #ffc107; color: #333; margin-right: 5px; }
         .btn-delete { background-color: #dc3545; }
         .btn:disabled { opacity: 0.65; cursor: not-allowed; }
@@ -28,6 +29,7 @@
         .search-bar label { font-weight: 700; color: #333; }
         .search-bar input { flex: 1; min-width: 220px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px; }
         .search-count { color: #666; font-size: 14px; white-space: nowrap; }
+        .qty-total { color: #217346; font-size: 14px; font-weight: 700; white-space: nowrap; }
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
         .modal-content { background-color: #fefefe; margin: 7% auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
         .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa; }
@@ -68,7 +70,11 @@
         <div class="search-bar">
             <label for="skuSearch">T&igrave;m SKU</label>
             <input type="text" id="skuSearch" inputmode="numeric" autocomplete="off" placeholder="Nhap so SKU de tim">
+            <label for="locationSearch">T&igrave;m v&#7883; tr&iacute;</label>
+            <input type="text" id="locationSearch" autocomplete="off" placeholder="Nhap Location hoac Sub Loc">
+            <button id="skuSortButton" type="button" class="btn btn-sort">SKU A-Z</button>
             <span id="searchCount" class="search-count"></span>
+            <span id="qtyTotal" class="qty-total"></span>
         </div>
 
         <div class="table-wrap">
@@ -130,7 +136,11 @@
         const canEdit = ["admin", "scanner"].includes("{{ session.get('role') }}");
         const modal = document.getElementById('inventoryModal');
         const skuSearchInput = document.getElementById('skuSearch');
+        const locationSearchInput = document.getElementById('locationSearch');
+        const skuSortButton = document.getElementById('skuSortButton');
         const searchCount = document.getElementById('searchCount');
+        const qtyTotal = document.getElementById('qtyTotal');
+        let skuSortDirection = 'asc';
         let locationOptions = [];
         let inventoryItems = [];
 
@@ -155,21 +165,52 @@
         }
 
         function getFilteredItems() {
-            const searchValue = skuSearchInput.value.trim().toLowerCase();
-            if (!searchValue) return inventoryItems;
+            const skuSearchValue = skuSearchInput.value.trim().toLowerCase();
+            const locationSearchValue = locationSearchInput.value.trim().toLowerCase();
+            if (!skuSearchValue && !locationSearchValue) return inventoryItems;
 
-            return inventoryItems.filter(item => String(item.sku || '').toLowerCase().includes(searchValue));
+            return inventoryItems.filter(item => {
+                const skuMatched = !skuSearchValue
+                    || String(item.sku || '').toLowerCase().includes(skuSearchValue);
+                const locationMatched = !locationSearchValue
+                    || String(item.location_code || '').toLowerCase().includes(locationSearchValue)
+                    || String(item.location_description || '').toLowerCase().includes(locationSearchValue)
+                    || String(item.sub_loc || '').toLowerCase().includes(locationSearchValue);
+
+                return skuMatched && locationMatched;
+            });
+        }
+
+        function getSortedItems(items) {
+            return [...items].sort((a, b) => {
+                const skuA = String(a.sku || '');
+                const skuB = String(b.sku || '');
+                const result = skuA.localeCompare(skuB, undefined, {numeric: true, sensitivity: 'base'});
+                return skuSortDirection === 'asc' ? result : -result;
+            });
+        }
+
+        function toggleSkuSort() {
+            skuSortDirection = skuSortDirection === 'asc' ? 'desc' : 'asc';
+            skuSortButton.textContent = skuSortDirection === 'asc' ? 'SKU A-Z' : 'SKU Z-A';
+            renderInventoryTable();
+        }
+
+        function sumQty(items) {
+            return items.reduce((total, item) => total + (Number(item.qty) || 0), 0);
         }
 
         function renderInventoryTable() {
             const tbody = document.getElementById('inventoryTableBody');
-            const items = getFilteredItems();
-            const searchValue = skuSearchInput.value.trim();
+            const items = getSortedItems(getFilteredItems());
+            const skuSearchValue = skuSearchInput.value.trim();
+            const locationSearchValue = locationSearchInput.value.trim();
             tbody.innerHTML = '';
 
-            searchCount.textContent = searchValue
+            searchCount.textContent = skuSearchValue || locationSearchValue
                 ? `${items.length}/${inventoryItems.length} ket qua`
                 : `${inventoryItems.length} SKU`;
+            qtyTotal.textContent = `Tong Qty: ${sumQty(items).toLocaleString('en-US')}`;
 
             if (inventoryItems.length === 0) {
                 const row = document.createElement('tr');
@@ -182,7 +223,7 @@
 
             if (items.length === 0) {
                 const row = document.createElement('tr');
-                const cell = setTextCell(row, 'Khong tim thay SKU phu hop');
+                const cell = setTextCell(row, 'Khong tim thay du lieu phu hop');
                 cell.colSpan = canEdit ? 8 : 7;
                 cell.style.textAlign = 'center';
                 tbody.appendChild(row);
@@ -364,6 +405,8 @@
         }
 
         skuSearchInput.addEventListener('input', renderInventoryTable);
+        locationSearchInput.addEventListener('input', renderInventoryTable);
+        skuSortButton.addEventListener('click', toggleSkuSort);
         loadInventory();
     </script>
 </body>
