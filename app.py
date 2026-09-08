@@ -778,6 +778,54 @@ def unlock_pallet():
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
+def _get_loose_sku_stats(selected_job):
+    master_sku_sq = db.session.query(
+        MasterData.sku.label('sku'),
+        func.max(MasterData.length).label('length'),
+        func.max(MasterData.width).label('width'),
+        func.max(MasterData.cbm).label('cbm')
+    ).group_by(MasterData.sku).subquery()
+
+    query = db.session.query(
+        Scanfile.jobno_type,
+        Scanfile.sku,
+        func.count(Scanfile.id).label('row_count'),
+        master_sku_sq.c.length,
+        master_sku_sq.c.width,
+        master_sku_sq.c.cbm
+    ).outerjoin(
+        master_sku_sq,
+        Scanfile.sku == master_sku_sq.c.sku
+    ).filter(
+        Scanfile.jobno == selected_job,
+        func.lower(func.trim(Scanfile.pallet_type)) == 'loose'
+    ).group_by(
+        Scanfile.jobno_type,
+        Scanfile.sku,
+        master_sku_sq.c.length,
+        master_sku_sq.c.width,
+        master_sku_sq.c.cbm
+    ).order_by(Scanfile.sku.asc())
+
+    loose_stats = []
+    for jobno_type, sku, row_count, length, width, cbm in query.all():
+        length = float(length or 0)
+        width = float(width or 0)
+        cbm = float(cbm or 0)
+        row_count = int(row_count or 0)
+        loose_stats.append({
+            'jobno_type': jobno_type or '',
+            'sku': sku or '',
+            'row_count': row_count,
+            'length': length,
+            'width': width,
+            'length_width': round(length * width, 6),
+            'cbm': cbm,
+            'total_cbm': round(row_count * cbm, 6)
+        })
+    return loose_stats
+
+
 @app.route('/stats')
 def stats():
     if 'user' not in session: return redirect(url_for('login'))
@@ -950,8 +998,74 @@ def stats():
             if r[0]
         ]
 
-    return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats, 
-                           jobs=job_list, selected_job=selected_job)
+    loose_sku_stats = _get_loose_sku_stats(selected_job) if selected_job else []
+
+    return render_template('statistics.html', stats=stats_data, grand_total=grand_total, remain_stats=remain_stats,
+                           jobs=job_list, selected_job=selected_job, loose_sku_stats=loose_sku_stats)
+
+
+@app.route('/stats/export-loose')
+def export_loose_stats():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    selected_job = (request.args.get('job_no') or '').strip()
+    if not selected_job:
+        return jsonify({'success': False, 'message': 'Vui lòng chọn Job No'}), 400
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        loose_stats = _get_loose_sku_stats(selected_job)
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Loose theo SKU'
+        worksheet.append([
+            'Job No', 'Job No Type', 'SKU', 'Số dòng', 'Dài', 'Rộng', 'Dài x Rộng',
+            'CBM / dòng', 'Tổng CBM'
+        ])
+
+        header_fill = PatternFill('solid', fgColor='1F4E78')
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = Font(color='FFFFFF', bold=True)
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        for item in loose_stats:
+            worksheet.append([
+                selected_job,
+                item['jobno_type'],
+                item['sku'],
+                item['row_count'],
+                item['length'],
+                item['width'],
+                item['length_width'],
+                item['cbm'],
+                item['total_cbm']
+            ])
+
+        worksheet.freeze_panes = 'A2'
+        worksheet.auto_filter.ref = worksheet.dimensions
+        for column, width in {'A': 18, 'B': 18, 'C': 24, 'D': 12, 'E': 12,
+                              'F': 12, 'G': 16, 'H': 16, 'I': 16}.items():
+            worksheet.column_dimensions[column].width = width
+        for row in worksheet.iter_rows(min_row=2, min_col=4, max_col=9):
+            row[0].number_format = '0'
+            for cell in row[1:]:
+                cell.number_format = '0.000000'
+
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        filename = f"loose_sku_{secure_filename(selected_job)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return Response(
+            output.getvalue(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/print-label')
 def print_label():
