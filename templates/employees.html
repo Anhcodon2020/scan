@@ -58,7 +58,7 @@
                 PST: <span id="statPST" style="font-size: 1.2em;">0</span>
             </div>
             <div style="background: #ffc107; color: #333; padding: 10px 15px; border-radius: 5px; font-weight: bold; flex: 1; text-align: center; min-width: 120px;">
-                PNT: <span id="statPNT" style="font-size: 1.2em;">0</span>
+                247: <span id="stat247" style="font-size: 1.2em;">0</span>
             </div>
         </div>
 
@@ -122,7 +122,7 @@
                     document.getElementById('statTotal').innerText = data.stats.TOTAL;
                     document.getElementById('statKLN').innerText = data.stats.KLN;
                     document.getElementById('statPST').innerText = data.stats.PST;
-                    document.getElementById('statPNT').innerText = data.stats.PNT;
+                    document.getElementById('stat247').innerText = data.stats['247'];
                 }
 
                 const tbody = document.getElementById('empTableBody');
@@ -132,6 +132,8 @@
                         const statusBadge = e.active == 1 
                             ? '<span class="badge-active">Hoạt động</span>' 
                             : '<span class="badge-inactive">Ngưng</span>';
+                        const employeeName = JSON.stringify(String(e.hovaten || ''));
+                        const employeeSource = JSON.stringify(String(e.source || ''));
                         
                         tbody.innerHTML += `
                             <tr>
@@ -141,8 +143,8 @@
                                 <td style="text-align: center;">${statusBadge}</td>
                                 <td>${e.created_at}</td>
                                 <td style="text-align: center;">
-                                    <button class="btn btn-edit" onclick="editEmployee(${e.id}, '${e.hovaten}', '${e.source || ''}', ${e.active})">Sửa</button>
-                                    <button class="btn btn-delete" onclick="deleteEmployee(${e.id}, '${e.hovaten}')">Xóa</button>
+                                    <button class="btn btn-edit" onclick='editEmployee(${Number(e.id)}, ${employeeName}, ${employeeSource}, ${Number(e.active)})'>Sửa</button>
+                                    <button class="btn btn-delete" onclick='deleteEmployee(${Number(e.id)}, ${employeeName})'>Xóa</button>
                                 </td>
                             </tr>
                         `;

@@ -3118,7 +3118,7 @@ def get_employees_list():
     try:
         employees = Employee.query.order_by(Employee.source.desc()).all()
         
-        stats = {'KLN': 0, 'PST': 0, 'PNT': 0, 'TOTAL': 0}
+        stats = {'KLN': 0, 'PST': 0, '247': 0, 'TOTAL': 0}
         data = []
         for e in employees:
             data.append({
@@ -3134,7 +3134,7 @@ def get_employees_list():
                 src = (e.source or '').upper()
                 if 'KLN' in src: stats['KLN'] += 1
                 elif 'PST' in src: stats['PST'] += 1
-                elif 'PNT' in src: stats['PNT'] += 1
+                elif '247' in src: stats['247'] += 1
 
         return jsonify({'success': True, 'employees': data, 'stats': stats})
     except Exception as e:
