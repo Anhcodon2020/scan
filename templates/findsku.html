@@ -96,7 +96,8 @@
             <label for="editInventorySelect">Inventory WHS record</label>
             <select id="editInventorySelect"></select>
             <label for="editLocationSelect">Location m&#7899;i</label>
-            <select id="editLocationSelect"></select>
+            <input type="text" id="editLocationSelect" list="locationList" autocomplete="off" placeholder="Nh&#7853;p location">
+            <datalist id="locationList"></datalist>
             <div class="modal-actions">
                 <button type="button" class="btn btn-cancel" onclick="closeLocationModal()">H&#7911;y</button>
                 <button type="button" id="saveLocationButton" class="btn btn-save" onclick="saveLocation()">L&#432;u</button>
@@ -195,20 +196,18 @@
                 option.textContent = `${record.location_code || '-'} (Sub Loc: ${record.sub_loc})`;
                 editInventorySelect.appendChild(option);
             });
-            editLocationSelect.replaceChildren();
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = 'Chon location';
-            editLocationSelect.appendChild(placeholder);
+            const locationList = document.getElementById('locationList');
+            locationList.replaceChildren();
             locationOptions.forEach(location => {
                 const option = document.createElement('option');
                 option.value = location.loc_id;
-                option.textContent = location.description
-                    ? `${location.loc_id} - ${location.description}`
-                    : location.loc_id;
-                editLocationSelect.appendChild(option);
+                option.label = location.description || '';
+                locationList.appendChild(option);
             });
             syncSelectedInventoryLocation();
+            if ((item.location_code || '').length > 0) {
+                editLocationSelect.value = item.location_code;
+            }
             locationModal.style.display = 'block';
         }
 
@@ -218,14 +217,11 @@
 
         function syncSelectedInventoryLocation() {
             const selectedRecord = editInventorySelect.selectedOptions[0];
-            if (!selectedRecord) return;
-            const currentLocation = selectedRecord.dataset.locationCode;
-            editLocationSelect.value = Array.from(editLocationSelect.options)
-                .some(option => option.value === currentLocation) ? currentLocation : '';
+            editLocationSelect.value = selectedRecord ? selectedRecord.dataset.locationCode || '' : '';
         }
 
         async function saveLocation() {
-            if (!editInventorySelect.value || !editLocationSelect.value) return;
+            if (!editInventorySelect.value || !editLocationSelect.value.trim()) return;
 
             saveLocationButton.disabled = true;
             try {
@@ -234,7 +230,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         inventory_id: editInventorySelect.value,
-                        loc_id: editLocationSelect.value
+                        loc_id: editLocationSelect.value.trim()
                     })
                 });
                 const data = await response.json();
