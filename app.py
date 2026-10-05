@@ -1548,51 +1548,110 @@ def findsku_search():
         return jsonify({'success': False, 'message': 'SKU is required'}), 400
 
     try:
-        rows = (
+        inbound_rows = (
             db.session.query(
-                InventoryWhs.loc_id,
-                InventoryWhs.sku,
-                InventoryWhs.sub_loc,
-                func.sum(InventoryWhs.qty).label('qty'),
-                Location.loc_id.label('location_code'),
-                Location.description.label('location_description')
+                func.trim(Inbound.po).label('parentpo'),
+                func.trim(Inbound.sku).label('sku'),
+                func.sum(func.coalesce(Inbound.carton, 0)).label('qty')
             )
-            .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
-            .filter(InventoryWhs.sku.contains(sku, autoescape=True))
-            .group_by(
-                InventoryWhs.loc_id,
-                InventoryWhs.sku,
-                InventoryWhs.sub_loc,
-                Location.loc_id,
-                Location.description
-            )
-            .order_by(InventoryWhs.loc_id.asc(), InventoryWhs.sub_loc.asc())
+            .filter(Inbound.sku.contains(sku, autoescape=True))
+            .filter(Inbound.po.isnot(None), func.trim(Inbound.po) != '')
+            .filter(Inbound.sku.isnot(None), func.trim(Inbound.sku) != '')
+            .group_by(func.trim(Inbound.po), func.trim(Inbound.sku))
+            .order_by(func.trim(Inbound.po).asc(), func.trim(Inbound.sku).asc())
             .all()
         )
 
-        results = [
-            {
-                'loc_id': row.loc_id,
-                'location_code': row.location_code or row.loc_id or '',
-                'location_description': row.location_description or '',
+        matching_skus = {row.sku.casefold() for row in inbound_rows if row.sku}
+        inventory_rows = []
+        if matching_skus:
+            inventory_rows = (
+                db.session.query(InventoryWhs, Location)
+                .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
+                .filter(func.lower(func.trim(InventoryWhs.sku)).in_(matching_skus))
+                .order_by(InventoryWhs.loc_id.asc(), InventoryWhs.sub_loc.asc())
+                .all()
+            )
+        inventory_by_sku = {}
+        for item, location in inventory_rows:
+            item_sku = (item.sku or '').casefold()
+            if item_sku in matching_skus:
+                inventory_by_sku.setdefault(item_sku, []).append((item, location))
+
+        results = []
+        for row in inbound_rows:
+            sku_key = (row.sku or '').casefold()
+            inventory_matches = inventory_by_sku.get(sku_key, [])
+            location_codes = []
+            location_descriptions = []
+            inventory_records = []
+            for item, location in inventory_matches:
+                loc_id = (location.loc_id if location else item.loc_id) or ''
+                if loc_id and loc_id not in location_codes:
+                    location_codes.append(loc_id)
+                if location and location.description:
+                    location_descriptions.append(f"{loc_id} - {location.description}")
+                inventory_records.append({
+                    'id': item.id,
+                    'location_code': loc_id,
+                    'sub_loc': item.sub_loc if item.sub_loc is not None else 0
+                })
+
+            results.append({
+                'parentpo_sku': f"{row.parentpo or ''}_{row.sku or ''}",
                 'sku': row.sku or '',
-                'sub_loc': row.sub_loc if row.sub_loc is not None else 0,
                 'qty': int(row.qty or 0),
-                'pallet': row.sub_loc if row.sub_loc is not None else 0,
-                'carton': int(row.qty or 0),
-                'time_update': ''
-            }
-            for row in rows
-        ]
+                'location_code': ', '.join(location_codes),
+                'location_description': '; '.join(location_descriptions),
+                'inventory_records': inventory_records
+            })
+
+        locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
 
         return jsonify({
             'success': True,
             'sku': sku,
             'results': results,
-            'total_qty': sum(item['qty'] for item in results),
-            'total_carton': sum(item['qty'] for item in results)
+            'total_qty': sum(int(row.qty or 0) for row in inbound_rows),
+            'total_locations': len({item['location_code'] for item in results if item['location_code']}),
+            'locations': [
+                {
+                    'loc_id': location.loc_id or '',
+                    'description': location.description or ''
+                }
+                for location in locations
+            ],
+            'can_edit': _can_edit_inventory_whs()
         })
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/findsku/edit-location', methods=['POST'])
+def findsku_edit_location():
+    if 'user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    if not _can_edit_inventory_whs():
+        return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    inventory_id = data.get('inventory_id')
+    loc_id = (data.get('loc_id') or '').strip()
+    if not inventory_id or not loc_id:
+        return jsonify({'success': False, 'message': 'Inventory and location are required'}), 400
+
+    try:
+        item = InventoryWhs.query.get(inventory_id)
+        if not item:
+            return jsonify({'success': False, 'message': 'Inventory item not found'}), 404
+        if not Location.query.filter_by(loc_id=loc_id).first():
+            return jsonify({'success': False, 'message': 'Location not found'}), 404
+
+        item.loc_id = loc_id
+        item.date_update = datetime.now()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/change-password', methods=['GET', 'POST'])
