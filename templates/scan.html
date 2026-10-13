@@ -921,30 +921,31 @@
             }
         });
 
-        // Chỉ nhận dữ liệu từ máy quét: chặn gõ tay bằng cách bỏ ký tự đến chậm
-        const MAX_SCANNER_GAP_MS = 50;
+        // Nhận dữ liệu từ cả máy quét dạng bàn phím và thiết bị chèn text.
         const MIN_BARCODE_LEN = 4;
         let scanBuffer = '';
-        let lastKeyTime = 0;
+        let inputScanTimer = null;
+
+        function submitBarcode(value) {
+            const code = (value || '').trim();
+            scanBuffer = '';
+            input.value = '';
+            if (code.length >= MIN_BARCODE_LEN) handleScan(code);
+        }
 
         input.addEventListener('keydown', function(e) {
             if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); return; }
-            const now = performance.now();
 
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const code = scanBuffer.trim();
-                scanBuffer = '';
-                this.value = '';
-                if (code.length >= MIN_BARCODE_LEN) handleScan(code);
+                clearTimeout(inputScanTimer);
+                submitBarcode(this.value || scanBuffer);
                 return;
             }
 
             if (e.key.length === 1) {
                 e.preventDefault();
-                if (scanBuffer && now - lastKeyTime > MAX_SCANNER_GAP_MS) scanBuffer = '';
                 scanBuffer += e.key;
-                lastKeyTime = now;
                 this.value = scanBuffer;
                 return;
             }
@@ -953,9 +954,14 @@
             if (e.key !== 'Shift' && e.key !== 'Tab') e.preventDefault();
         });
 
-        ['paste', 'drop', 'cut', 'contextmenu'].forEach(ev =>
+        ['drop', 'cut', 'contextmenu'].forEach(ev =>
             input.addEventListener(ev, e => e.preventDefault()));
-        input.addEventListener('beforeinput', e => e.preventDefault());
+        input.addEventListener('input', function() {
+            clearTimeout(inputScanTimer);
+            inputScanTimer = setTimeout(() => {
+                submitBarcode(input.value);
+            }, 250);
+        });
 
         // Hàm xử lý scan chung (cho cả Input và Camera)
         function handleScan(code) {
