@@ -13,6 +13,7 @@ class Inbound(db.Model):
     cbm = db.Column(db.Float, nullable=True)
     labour = db.Column(db.String(255), nullable=True)
     PackinglistNo = db.Column(db.String(100), nullable=True)
+    location = db.Column(db.String(100), nullable=True)
 
     def __repr__(self):
         return f'<Inbound ID:{self.id} PO:{self.po}>'

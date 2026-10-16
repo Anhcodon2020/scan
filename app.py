@@ -35,6 +35,7 @@ db.init_app(app)
 # Cache cục bộ cho MasterData để giảm query DB khi scan liên tục
 _refix_cache = {}
 _inventory_whs_date_update_checked = False
+_inbound_location_checked = False
 
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 IMAGE_UPLOAD_TABLE = os.getenv('IMAGE_UPLOAD_TABLE', 'training_images_1')
@@ -110,6 +111,30 @@ def _ensure_inventory_whs_date_update_column():
         db.session.commit()
 
     _inventory_whs_date_update_checked = True
+
+def _ensure_inbound_location_column():
+    global _inbound_location_checked
+    if _inbound_location_checked:
+        return
+    try:
+        if db.engine.dialect.name == 'sqlite':
+            existing = {r[1] for r in db.session.execute(text("PRAGMA table_info(inbound)")).fetchall()}
+        elif db.engine.dialect.name in ('mysql', 'mariadb'):
+            existing = {r[0] for r in db.session.execute(text("SHOW COLUMNS FROM inbound")).fetchall()}
+        else:
+            existing = {r[0] for r in db.session.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'inbound'"
+            )).fetchall()}
+        if existing and 'location' not in existing:
+            db.session.execute(text("ALTER TABLE inbound ADD COLUMN location VARCHAR(100)"))
+            db.session.commit()
+        _inbound_location_checked = True
+    except Exception:
+        db.session.rollback()
+
+@app.before_request
+def _before_request_ensure_inbound_location():
+    _ensure_inbound_location_column()
 
 def _ensure_image_upload_table(table_name):
     if db.engine.dialect.name == 'sqlite':
@@ -1552,7 +1577,8 @@ def findsku_search():
             db.session.query(
                 func.trim(Inbound.po).label('parentpo'),
                 func.trim(Inbound.sku).label('sku'),
-                func.sum(func.coalesce(Inbound.carton, 0)).label('qty')
+                func.sum(func.coalesce(Inbound.carton, 0)).label('qty'),
+                func.max(func.trim(Inbound.location)).label('location')
             )
             .filter(Inbound.sku.contains(sku, autoescape=True))
             .filter(Inbound.po.isnot(None), func.trim(Inbound.po) != '')
@@ -1562,65 +1588,19 @@ def findsku_search():
             .all()
         )
 
-        matching_skus = {row.sku.casefold() for row in inbound_rows if row.sku}
-        inventory_rows = []
-        if matching_skus:
-            inventory_rows = (
-                db.session.query(InventoryWhs, Location)
-                .outerjoin(Location, InventoryWhs.loc_id == Location.loc_id)
-                .filter(func.lower(func.trim(InventoryWhs.sku)).in_(matching_skus))
-                .order_by(InventoryWhs.loc_id.asc(), InventoryWhs.sub_loc.asc())
-                .all()
-            )
-        inventory_by_sku = {}
-        for item, location in inventory_rows:
-            item_sku = (item.sku or '').casefold()
-            if item_sku in matching_skus:
-                inventory_by_sku.setdefault(item_sku, []).append((item, location))
-
-        results = []
-        for row in inbound_rows:
-            sku_key = (row.sku or '').casefold()
-            inventory_matches = inventory_by_sku.get(sku_key, [])
-            location_codes = []
-            location_descriptions = []
-            inventory_records = []
-            for item, location in inventory_matches:
-                loc_id = (location.loc_id if location else item.loc_id) or ''
-                if loc_id and loc_id not in location_codes:
-                    location_codes.append(loc_id)
-                if location and location.description:
-                    location_descriptions.append(f"{loc_id} - {location.description}")
-                inventory_records.append({
-                    'id': item.id,
-                    'location_code': loc_id,
-                    'sub_loc': item.sub_loc if item.sub_loc is not None else 0
-                })
-
-            results.append({
-                'parentpo_sku': f"{row.parentpo or ''}_{row.sku or ''}",
-                'sku': row.sku or '',
-                'qty': int(row.qty or 0),
-                'location_code': ', '.join(location_codes),
-                'location_description': '; '.join(location_descriptions),
-                'inventory_records': inventory_records
-            })
-
-        locations = Location.query.order_by(Location.loc_id.asc(), Location.id.asc()).all()
+        results = [{
+            'parentpo_sku': f"{row.parentpo or ''}_{row.sku or ''}",
+            'po': row.parentpo or '',
+            'sku': row.sku or '',
+            'qty': int(row.qty or 0),
+            'location': row.location or ''
+        } for row in inbound_rows]
 
         return jsonify({
             'success': True,
             'sku': sku,
             'results': results,
             'total_qty': sum(int(row.qty or 0) for row in inbound_rows),
-            'total_locations': len({item['location_code'] for item in results if item['location_code']}),
-            'locations': [
-                {
-                    'loc_id': location.loc_id or '',
-                    'description': location.description or ''
-                }
-                for location in locations
-            ],
             'can_edit': _can_edit_inventory_whs()
         })
     except Exception as e:
@@ -1634,22 +1614,20 @@ def findsku_edit_location():
         return jsonify({'success': False, 'message': 'Forbidden'}), 403
 
     data = request.json or {}
-    inventory_id = data.get('inventory_id')
-    loc_id = (data.get('loc_id') or '').strip()
-    if not inventory_id or not loc_id:
-        return jsonify({'success': False, 'message': 'Inventory and location are required'}), 400
+    po = (data.get('po') or '').strip()
+    sku = (data.get('sku') or '').strip()
+    location = (data.get('location') or '').strip()
+    if not po or not sku:
+        return jsonify({'success': False, 'message': 'PO and SKU are required'}), 400
 
     try:
-        item = InventoryWhs.query.get(inventory_id)
-        if not item:
-            return jsonify({'success': False, 'message': 'Inventory item not found'}), 404
-        if not Location.query.filter_by(loc_id=loc_id).first():
-            return jsonify({'success': False, 'message': 'Location not found'}), 404
-
-        item.loc_id = loc_id
-        item.date_update = datetime.now()
+        updated = Inbound.query.filter(
+            func.trim(Inbound.po) == po, func.trim(Inbound.sku) == sku
+        ).update({Inbound.location: location or None}, synchronize_session=False)
+        if not updated:
+            return jsonify({'success': False, 'message': 'Inbound not found'}), 404
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'updated': updated})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500

@@ -32,7 +32,7 @@
         .modal { display: none; position: fixed; z-index: 10; inset: 0; overflow: auto; background: rgba(0,0,0,.45); }
         .modal-content { max-width: 420px; margin: 12vh auto; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
         .modal-content label { display: block; margin-bottom: 6px; font-weight: 700; }
-        .modal-content select { width: 100%; padding: 10px; margin-bottom: 16px; border: 1px solid #bbb; border-radius: 4px; font-size: 16px; }
+        .modal-content input { width: 100%; padding: 10px; margin-bottom: 16px; border: 1px solid #bbb; border-radius: 4px; font-size: 16px; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
         .btn-cancel { background: #6c757d; }
         .btn-save { background: #198754; }
@@ -68,7 +68,6 @@
 
         <div class="summary">
             <div class="summary-box"><span>SKU t&igrave;m ki&#7871;m</span><strong id="summarySku">-</strong></div>
-            <div class="summary-box"><span>Locations</span><strong id="summaryLocations">0</strong></div>
             <div class="summary-box"><span>T&#7893;ng s&#7889; l&#432;&#7907;ng inbound</span><strong id="summaryQty">0</strong></div>
         </div>
 
@@ -93,11 +92,7 @@
         <div class="modal-content">
             <h3 style="margin-top: 0;">Edit Location</h3>
             <p id="editSkuLabel"></p>
-            <label for="editInventorySelect">Inventory WHS record</label>
-            <select id="editInventorySelect"></select>
-            <label for="editLocationSelect">Location m&#7899;i</label>
-            <input type="text" id="editLocationSelect" list="locationList" autocomplete="off" placeholder="Nh&#7853;p location">
-            <datalist id="locationList"></datalist>
+            <input type="text" id="editLocationInput" autocomplete="off" placeholder="Nh&#7853;p location">
             <div class="modal-actions">
                 <button type="button" class="btn btn-cancel" onclick="closeLocationModal()">H&#7911;y</button>
                 <button type="button" id="saveLocationButton" class="btn btn-save" onclick="saveLocation()">L&#432;u</button>
@@ -111,11 +106,49 @@
         const statusBox = document.getElementById('status');
         const resultBody = document.getElementById('resultBody');
         const locationModal = document.getElementById('locationModal');
-        const editInventorySelect = document.getElementById('editInventorySelect');
-        const editLocationSelect = document.getElementById('editLocationSelect');
+        const editLocationInput = document.getElementById('editLocationInput');
         const saveLocationButton = document.getElementById('saveLocationButton');
         let canEditLocations = false;
-        let locationOptions = [];
+        let editingItem = null;
+
+        function openLocationModal(item) {
+            editingItem = item;
+            document.getElementById('editSkuLabel').textContent = item.parentpo_sku || '';
+            editLocationInput.value = item.location || '';
+            locationModal.style.display = 'block';
+            editLocationInput.focus();
+        }
+
+        function closeLocationModal() {
+            locationModal.style.display = 'none';
+            editingItem = null;
+        }
+
+        async function saveLocation() {
+            if (!editingItem) return;
+            saveLocationButton.disabled = true;
+            try {
+                const response = await fetch('/api/findsku/edit-location', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        po: editingItem.po,
+                        sku: editingItem.sku,
+                        location: editLocationInput.value.trim()
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Khong cap nhat duoc location');
+                }
+                closeLocationModal();
+                await searchSku();
+            } catch (error) {
+                showStatus('error', error.message || 'Khong cap nhat duoc location');
+            } finally {
+                saveLocationButton.disabled = false;
+            }
+        }
 
         function showStatus(type, message) {
             statusBox.className = 'status ' + type;
@@ -153,10 +186,7 @@
                 row.appendChild(qtyCell);
 
                 const locationCell = document.createElement('td');
-                locationCell.textContent = item.location_code || '-';
-                if (item.location_description) {
-                    locationCell.title = item.location_description;
-                }
+                locationCell.textContent = item.location || '-';
                 row.appendChild(locationCell);
 
                 const actionCell = document.createElement('td');
@@ -166,10 +196,6 @@
                     editButton.type = 'button';
                     editButton.className = 'btn btn-edit';
                     editButton.textContent = 'Edit Location';
-                    editButton.disabled = !item.inventory_records.length;
-                    editButton.title = item.inventory_records.length
-                        ? 'Thay location cua Inventory WHS'
-                        : 'SKU chua co ban ghi trong Inventory WHS';
                     editButton.addEventListener('click', () => openLocationModal(item));
                     actionCell.appendChild(editButton);
                 } else {
@@ -179,74 +205,6 @@
                 resultBody.appendChild(row);
             });
         }
-
-        function openLocationModal(item) {
-            if (!canEditLocations || !item.inventory_records.length) return;
-            if (locationOptions.length === 0) {
-                showStatus('error', 'Chua co location de cap nhat');
-                return;
-            }
-
-            document.getElementById('editSkuLabel').textContent = item.parentpo_sku || item.sku || '';
-            editInventorySelect.replaceChildren();
-            item.inventory_records.forEach(record => {
-                const option = document.createElement('option');
-                option.value = record.id;
-                option.dataset.locationCode = record.location_code || '';
-                option.textContent = `${record.location_code || '-'} (Sub Loc: ${record.sub_loc})`;
-                editInventorySelect.appendChild(option);
-            });
-            const locationList = document.getElementById('locationList');
-            locationList.replaceChildren();
-            locationOptions.forEach(location => {
-                const option = document.createElement('option');
-                option.value = location.loc_id;
-                option.label = location.description || '';
-                locationList.appendChild(option);
-            });
-            syncSelectedInventoryLocation();
-            if ((item.location_code || '').length > 0) {
-                editLocationSelect.value = item.location_code;
-            }
-            locationModal.style.display = 'block';
-        }
-
-        function closeLocationModal() {
-            locationModal.style.display = 'none';
-        }
-
-        function syncSelectedInventoryLocation() {
-            const selectedRecord = editInventorySelect.selectedOptions[0];
-            editLocationSelect.value = selectedRecord ? selectedRecord.dataset.locationCode || '' : '';
-        }
-
-        async function saveLocation() {
-            if (!editInventorySelect.value || !editLocationSelect.value.trim()) return;
-
-            saveLocationButton.disabled = true;
-            try {
-                const response = await fetch('/api/findsku/edit-location', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        inventory_id: editInventorySelect.value,
-                        loc_id: editLocationSelect.value.trim()
-                    })
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.message || 'Khong cap nhat duoc location');
-                }
-                closeLocationModal();
-                await searchSku();
-            } catch (error) {
-                showStatus('error', error.message || 'Khong cap nhat duoc location');
-            } finally {
-                saveLocationButton.disabled = false;
-            }
-        }
-
-        editInventorySelect.addEventListener('change', syncSelectedInventoryLocation);
 
         async function searchSku() {
             const sku = skuInput.value.trim();
@@ -259,7 +217,6 @@
             btnSearch.disabled = true;
             clearStatus();
             document.getElementById('summarySku').textContent = sku;
-            document.getElementById('summaryLocations').textContent = '0';
             document.getElementById('summaryQty').textContent = '0';
             setEmptyRow('Dang tim inbound...');
 
@@ -275,10 +232,8 @@
                 }
 
                 document.getElementById('summarySku').textContent = data.sku || sku;
-                document.getElementById('summaryLocations').textContent = data.total_locations || 0;
                 document.getElementById('summaryQty').textContent = Number(data.total_qty || 0).toLocaleString('en-US');
                 canEditLocations = Boolean(data.can_edit);
-                locationOptions = data.locations || [];
 
                 if (data.results.length === 0) {
                     showStatus('info', 'Khong tim thay SKU khop voi noi dung da nhap');
@@ -291,7 +246,6 @@
             } catch (error) {
                 showStatus('error', error.message || 'Khong ket noi duoc server');
                 document.getElementById('summarySku').textContent = '-';
-                document.getElementById('summaryLocations').textContent = '0';
                 document.getElementById('summaryQty').textContent = '0';
                 setEmptyRow('Khong co du lieu');
             } finally {
