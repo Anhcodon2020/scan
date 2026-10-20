@@ -1,32 +1,41 @@
-import os
-from sqlalchemy import create_engine, text
+import sys
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 load_dotenv()
+
 from config import Config
 
+
 def check_db_connection():
-    print("--- Bắt đầu kiểm tra kết nối Database ---")
-    
-    # Lấy URI từ Config
+    """Run a minimal query and return whether the configured database is reachable."""
+    print("--- Starting database connection check ---")
+
     db_uri = Config.SQLALCHEMY_DATABASE_URI
-    # Ẩn mật khẩu khi in ra log để bảo mật
-    safe_uri = db_uri.split('@')[-1] if '@' in db_uri else "..."
-    driver = db_uri.split('://')[0]
-    print(f"Target: {safe_uri} | Driver: {driver}")
-    
-    # Lấy Engine Options (bao gồm cấu hình SSL ca.pem)
-    engine_opts = getattr(Config, 'SQLALCHEMY_ENGINE_OPTIONS', {})
-    
+    db_url = make_url(db_uri)
+    target = db_url.database or "(default)"
+    if db_url.host:
+        target = f"{db_url.host}:{db_url.port or '(default)'}/{target}"
+    print(f"Target: {target} | Driver: {db_url.drivername}")
+
+    engine_opts = getattr(Config, "SQLALCHEMY_ENGINE_OPTIONS", {})
+    engine = None
     try:
         engine = create_engine(db_uri, **engine_opts)
         with engine.connect() as connection:
-            result = connection.execute(text("SELECT 1"))
-            print("✅ KẾT NỐI AIVEN MYSQL THÀNH CÔNG! (SSL Verified)")
-            
-    except Exception as e:
-        print("❌ KẾT NỐI THẤT BẠI!")
-        print(f"Chi tiết lỗi: {e}")
+            connection.execute(text("SELECT 1"))
+        print("Database connection OK.")
+        return True
+    except Exception as exc:
+        print("Database connection failed.")
+        print(f"Error detail: {exc}")
+        return False
+    finally:
+        if engine is not None:
+            engine.dispose()
+
 
 if __name__ == "__main__":
-    check_db_connection()
+    sys.exit(0 if check_db_connection() else 1)

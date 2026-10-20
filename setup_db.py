@@ -10,7 +10,7 @@ from models.users import User
 from models.load import Load
 
 def deploy():
-    print("--- Đang khởi tạo Database trên Aiven ---")
+    print("--- Đang khởi tạo Database ---")
     with app.app_context():
         # 1. Tạo tất cả các bảng (users, v.v.)
         try:
