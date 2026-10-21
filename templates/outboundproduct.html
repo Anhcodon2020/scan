@@ -58,6 +58,7 @@
             border: 1px solid #d1e0ff;
         }
         .employee-input { min-width: 180px; }
+        .scan-user-input { min-width: 180px; }
     </style>
 </head>
 <body>
@@ -151,6 +152,7 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
+                            <th>Người scan</th>
                             <th>Job No</th>
                             <th>Số cont</th>
                             <th>Ngày đóng hàng</th>
@@ -160,6 +162,9 @@
                     </thead>
                     <tbody>
                         <tr v-for="row in rows" :key="row.key">
+                            <td>
+                                <input class="form-control scan-user-input" v-model.trim="row.userscan" placeholder="Người scan" @keyup.enter="saveScanUser(row)">
+                            </td>
                             <td class="fw-semibold">{{ row.jobno }}</td>
                             <td>{{ row.cont }}</td>
                             <td>{{ formatDate(row.date_stuff) }}</td>
@@ -167,6 +172,10 @@
                                 <input class="form-control employee-input" v-model.trim="row.nhanvien" placeholder="Tên nhân viên" @keyup.enter="saveRow(row)">
                             </td>
                             <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary me-1" @click="saveScanUser(row)" :disabled="scanUserSavingKey === row.jobno">
+                                    <span v-if="scanUserSavingKey === row.jobno" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    <i v-else class="fas fa-user-pen me-1"></i>Lưu scan
+                                </button>
                                 <button class="btn btn-sm btn-success" @click="saveRow(row)" :disabled="!row.nhanvien || savingKey === row.key">
                                     <span v-if="savingKey === row.key" class="spinner-border spinner-border-sm me-1" role="status"></span>
                                     <i v-else class="fas fa-floppy-disk me-1"></i>Lưu
@@ -232,6 +241,7 @@
                 const loading = ref(false);
                 const loadingDates = ref(false);
                 const savingKey = ref('');
+                const scanUserSavingKey = ref('');
                 const message = ref('');
                 const messageType = ref('warning');
 
@@ -353,6 +363,31 @@
                     }
                 };
 
+                const saveScanUser = async (row) => {
+                    scanUserSavingKey.value = row.jobno;
+                    setMessage('');
+                    try {
+                        const res = await fetch('/api/outbound-product/save-scan-user', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jobno: row.jobno,
+                                userscan: row.userscan || ''
+                            })
+                        });
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Could not save scan user.');
+                        rows.value.forEach((item) => {
+                            if (item.jobno === row.jobno) item.userscan = row.userscan || '';
+                        });
+                        setMessage(data.message || 'Scan user saved.', 'success');
+                    } catch (err) {
+                        setMessage(err.message || 'Could not save scan user.');
+                    } finally {
+                        scanUserSavingKey.value = '';
+                    }
+                };
+
                 const handleDateChange = async () => {
                     selectedJob.value = '';
                     rows.value = [];
@@ -401,12 +436,14 @@
                     loading,
                     loadingDates,
                     savingKey,
+                    scanUserSavingKey,
                     message,
                     messageType,
                     fetchDates,
                     fetchJobnos,
                     loadDetails,
                     saveRow,
+                    saveScanUser,
                     handleDateChange,
                     refreshAll,
                     formatDate,

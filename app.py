@@ -2391,12 +2391,28 @@ def outbound_product_details():
             ORDER BY src.jobno, src.cont
         """)
         rows = db.session.execute(query, params).fetchall()
+        jobnos = list({row.jobno for row in rows if row.jobno})
+        scan_users_by_job = {}
+        if jobnos:
+            scan_user_rows = db.session.query(
+                Scanfile.jobno,
+                func.group_concat(func.distinct(func.trim(Scanfile.userscan))).label('userscan')
+            ).filter(
+                Scanfile.jobno.in_(jobnos),
+                Scanfile.userscan.isnot(None),
+                func.trim(Scanfile.userscan) != ''
+            ).group_by(Scanfile.jobno).all()
+            scan_users_by_job = {
+                row.jobno: row.userscan or ''
+                for row in scan_user_rows
+            }
         data = [
             {
                 'jobno': row.jobno,
                 'cont': row.cont,
                 'date_stuff': str(row.date_stuff) if row.date_stuff else '',
-                'nhanvien': row.nhanvien or ''
+                'nhanvien': row.nhanvien or '',
+                'userscan': scan_users_by_job.get(row.jobno, '')
             }
             for row in rows
         ]
@@ -2448,6 +2464,35 @@ def outbound_product_save():
             """), params)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Da luu thong tin dong hang'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/outbound-product/save-scan-user', methods=['POST'])
+def outbound_product_save_scan_user():
+    if 'user' not in session: return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    jobno = str(data.get('jobno') or '').strip()
+    userscan = str(data.get('userscan') or '').strip()
+    if not jobno:
+        return jsonify({'success': False, 'message': 'Vui long chon Job No'}), 400
+
+    try:
+        updated = Scanfile.query.filter(Scanfile.jobno == jobno).update(
+            {'userscan': userscan},
+            synchronize_session=False
+        )
+        if not updated:
+            db.session.rollback()
+            return jsonify({'success': False, 'message': 'Khong tim thay du lieu scan cho Job No nay'}), 404
+
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'Da cap nhat nguoi scan cho Job No {jobno}',
+            'updated': updated
+        })
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
