@@ -367,12 +367,26 @@ def logout():
 def scan():
     if 'user' not in session: return redirect(url_for('login'))
     
-    # Lấy danh sách Job Type từ Database (để dropdown không bị trống)
+    # Một Job Type phải xuất hiện lại sau khi Admin mở khóa pallet. Khi mở khóa,
+    # finish và jobscan được trả về rỗng; các pallet hoàn thành vẫn bị loại trừ.
     job_types = []
+    jobno_by_type = {}
     try:
-        job_types = [r[0] for r in db.session.query(Scanfile.jobno_type).filter(
-            (Scanfile.pallet == '') | (Scanfile.pallet == None)
-        ).distinct().all() if r[0]]
+        can_continue_scanning = (
+            ((Scanfile.pallet == '') | (Scanfile.pallet == None)) |
+            (((Scanfile.finish == '') | (Scanfile.finish == None)) &
+             ((Scanfile.jobscan == '') | (Scanfile.jobscan == None)))
+        )
+        job_rows = db.session.query(
+            Scanfile.jobno_type,
+            func.max(Scanfile.jobno)
+        ).filter(
+            can_continue_scanning,
+            Scanfile.jobno_type.isnot(None),
+            func.trim(Scanfile.jobno_type) != ''
+        ).group_by(Scanfile.jobno_type).order_by(Scanfile.jobno_type).all()
+        job_types = [row[0] for row in job_rows]
+        jobno_by_type = {row[0]: row[1] or '' for row in job_rows}
     except Exception:
         pass # Bỏ qua lỗi nếu bảng chưa có dữ liệu
 
@@ -394,7 +408,12 @@ def scan():
         if str(i) not in used_pallets:
             pallets.append({'no': i, 'label': f"{i}"})
     
-    return render_template('scan.html', job_types=job_types, available_pallets=pallets)
+    return render_template(
+        'scan.html',
+        job_types=job_types,
+        jobno_by_type=jobno_by_type,
+        available_pallets=pallets
+    )
 
 @app.route('/api/get_pallets')
 def get_pallets():
@@ -801,6 +820,71 @@ def unlock_pallet():
         return jsonify({'success': True, 'message': f'Đã mở khóa Pallet {pallet_no} thành công.'})
     except Exception as e:
         db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/unlock-pallet')
+def unlock_pallet_page():
+    """Trang quản trị để mở khóa pallet đã báo hoàn thành."""
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') != 'admin':
+        return redirect(url_for('index'))
+    return render_template('unlock_pallet.html')
+
+@app.route('/api/unlock-pallet/jobnos')
+def unlock_pallet_jobnos():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền truy cập'}), 403
+
+    try:
+        jobnos = [row[0] for row in db.session.query(Scanfile.jobno)
+                  .filter(Scanfile.jobno.isnot(None), func.trim(Scanfile.jobno) != '')
+                  .distinct().order_by(Scanfile.jobno.desc()).all()]
+        return jsonify({'success': True, 'jobnos': jobnos})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/unlock-pallet/job-types')
+def unlock_pallet_job_types():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền truy cập'}), 403
+
+    jobno = (request.args.get('jobno') or '').strip()
+    if not jobno:
+        return jsonify({'success': False, 'message': 'Thiếu Job No'}), 400
+
+    try:
+        job_types = [row[0] for row in db.session.query(Scanfile.jobno_type)
+                     .filter(Scanfile.jobno == jobno,
+                             Scanfile.jobno_type.isnot(None),
+                             func.trim(Scanfile.jobno_type) != '')
+                     .distinct().order_by(Scanfile.jobno_type).all()]
+        return jsonify({'success': True, 'job_types': job_types})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/unlock-pallet/pallets')
+def unlock_pallet_pallets():
+    if 'user' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'message': 'Không có quyền truy cập'}), 403
+
+    jobno = (request.args.get('jobno') or '').strip()
+    job_type = (request.args.get('jobno_type') or '').strip()
+    if not jobno or not job_type:
+        return jsonify({'success': False, 'message': 'Thiếu Job No hoặc Job No Type'}), 400
+
+    try:
+        # Chỉ trả các pallet thực sự đang bị khóa: có bản ghi tương ứng trong Load.
+        pallets = [row[0] for row in db.session.query(Load.pallet_no)
+                   .join(Scanfile, Scanfile.jobno_type == Load.jobno_type)
+                   .filter(Scanfile.jobno == jobno,
+                           Scanfile.pallet == Load.pallet_no,
+                           Load.jobno_type == job_type,
+                           Load.pallet_no.isnot(None),
+                           func.trim(Load.pallet_no) != '')
+                   .distinct().order_by(Load.pallet_no).all()]
+        return jsonify({'success': True, 'pallets': pallets})
+    except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
 def _get_loose_sku_stats(selected_job):

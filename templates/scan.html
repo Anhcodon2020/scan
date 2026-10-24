@@ -63,9 +63,10 @@
                 <label for="jobType">Job No Type</label>
                 <select id="jobType">
                     {% for type in job_types %}
-                    <option value="{{ type }}">{{ type }}</option>
+                    <option value="{{ type }}" data-jobno="{{ jobno_by_type.get(type, '') }}">{{ type }}</option>
                     {% endfor %}
                 </select>
+                <div style="margin-top: 7px; color: #555; font-size: 13px;">Job No: <strong id="jobNoDisplay">-</strong></div>
             </div>
 
             <div class="form-group">
@@ -173,6 +174,7 @@
         const jobScannedSpan = document.getElementById('jobScanned');
         const jobRemainSpan = document.getElementById('jobRemain');
         const jobTypeSelect = document.getElementById('jobType');
+        const jobNoDisplay = document.getElementById('jobNoDisplay');
         const palletSelect = document.getElementById('palletNo');
         const palletDetailsDiv = document.getElementById('palletDetails');
         const palletTypeSelect = document.getElementById('palletType');
@@ -644,12 +646,14 @@
 
         // Gọi khi đổi Job Type và khi mới vào trang
         jobTypeSelect.addEventListener('change', () => {
+            jobNoDisplay.innerText = jobTypeSelect.options[jobTypeSelect.selectedIndex]?.dataset.jobno || '-';
             fetchJobStats();
             fetchHistory();
             fetchPallets();
         });
         palletSelect.addEventListener('change', fetchPalletDetails);
         
+        jobNoDisplay.innerText = jobTypeSelect.options[jobTypeSelect.selectedIndex]?.dataset.jobno || '-';
         fetchJobStats();
         fetchHistory();
         fetchPalletDetails(); // Gọi lần đầu khi load trang

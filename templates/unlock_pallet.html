@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mở khóa pallet</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --primary: #0d6efd; --danger: #dc3545; --muted: #64748b; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; font-family: "Segoe UI", Arial, sans-serif; color: #1e293b; background: #f1f5f9; }
+        .nav { background: #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, .12); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .nav a { color: var(--primary); text-decoration: none; font-weight: 700; }
+        .nav .back { color: var(--muted); font-weight: 600; }
+        main { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); overflow: hidden; }
+        .heading { padding: 28px 30px 20px; border-bottom: 1px solid #e2e8f0; }
+        h1 { margin: 0 0 8px; font-size: 1.5rem; }
+        .heading p { margin: 0; color: var(--muted); line-height: 1.5; }
+        .form { padding: 28px 30px 30px; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        label { display: block; margin-bottom: 7px; color: #475569; font-size: .9rem; font-weight: 700; }
+        select { width: 100%; min-height: 42px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; padding: 8px 10px; color: #0f172a; }
+        select:disabled { color: #94a3b8; background: #f8fafc; cursor: not-allowed; }
+        .notice { min-height: 24px; margin: 20px 0 0; color: var(--muted); font-size: .92rem; }
+        .notice.error { color: var(--danger); }
+        .actions { display: flex; justify-content: flex-end; margin-top: 22px; }
+        button { min-height: 42px; border: 0; border-radius: 7px; padding: 0 18px; color: #fff; background: var(--danger); font-weight: 700; cursor: pointer; }
+        button:hover:not(:disabled) { background: #bb2d3b; }
+        button:disabled { opacity: .55; cursor: not-allowed; }
+        @media (max-width: 640px) { main { margin-top: 25px; } .grid { grid-template-columns: 1fr; } .nav { padding: 14px 16px; } }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <a href="/"><i class="fas fa-warehouse"></i> WAREHOUSE SCAN</a>
+        <a class="back" href="/"><i class="fas fa-arrow-left"></i> Trang chủ</a>
+    </nav>
+    <main>
+        <section class="card">
+            <div class="heading">
+                <h1><i class="fas fa-unlock-keyhole"></i> Mở khóa pallet đóng hàng</h1>
+                <p>Chọn Job No, Job No Type và pallet cần mở. Hệ thống sẽ xóa bản ghi khóa tương ứng trong bảng Load.</p>
+            </div>
+            <div class="form">
+                <div class="grid">
+                    <div>
+                        <label for="jobno">Job No</label>
+                        <select id="jobno"><option value="">-- Chọn Job No --</option></select>
+                    </div>
+                    <div>
+                        <label for="jobnoType">Job No Type</label>
+                        <select id="jobnoType" disabled><option value="">-- Chọn Job No Type --</option></select>
+                    </div>
+                    <div>
+                        <label for="pallet">Pallet</label>
+                        <select id="pallet" disabled><option value="">-- Chọn Pallet --</option></select>
+                    </div>
+                </div>
+                <div id="notice" class="notice" role="status">Đang tải danh sách Job No...</div>
+                <div class="actions"><button id="unlockButton" disabled><i class="fas fa-unlock"></i> Mở khóa</button></div>
+            </div>
+        </section>
+    </main>
+    <script>
+        const jobno = document.getElementById('jobno');
+        const jobnoType = document.getElementById('jobnoType');
+        const pallet = document.getElementById('pallet');
+        const unlockButton = document.getElementById('unlockButton');
+        const notice = document.getElementById('notice');
+
+        function setNotice(message, isError = false) {
+            notice.textContent = message;
+            notice.className = isError ? 'notice error' : 'notice';
+        }
+        function resetSelect(select, placeholder) {
+            select.innerHTML = `<option value="">${placeholder}</option>`;
+            select.disabled = true;
+        }
+        function fillSelect(select, values, placeholder) {
+            resetSelect(select, placeholder);
+            values.forEach(value => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+            });
+            select.disabled = values.length === 0;
+        }
+        async function getJson(url) {
+            const response = await fetch(url);
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.message || 'Không thể tải dữ liệu.');
+            return data;
+        }
+        async function loadJobnos() {
+            try {
+                const data = await getJson('/api/unlock-pallet/jobnos');
+                fillSelect(jobno, data.jobnos, '-- Chọn Job No --');
+                jobno.disabled = false;
+                setNotice(data.jobnos.length ? 'Chọn Job No để tiếp tục.' : 'Chưa có Job No trong scanfile.');
+            } catch (error) { setNotice(error.message, true); }
+        }
+        jobno.addEventListener('change', async () => {
+            resetSelect(jobnoType, '-- Chọn Job No Type --'); resetSelect(pallet, '-- Chọn Pallet --'); unlockButton.disabled = true;
+            if (!jobno.value) return setNotice('Chọn Job No để tiếp tục.');
+            setNotice('Đang tải Job No Type...');
+            try {
+                const data = await getJson(`/api/unlock-pallet/job-types?jobno=${encodeURIComponent(jobno.value)}`);
+                fillSelect(jobnoType, data.job_types, '-- Chọn Job No Type --');
+                setNotice(data.job_types.length ? 'Chọn Job No Type để xem pallet đang khóa.' : 'Job No này chưa có Job No Type.');
+            } catch (error) { setNotice(error.message, true); }
+        });
+        jobnoType.addEventListener('change', async () => {
+            resetSelect(pallet, '-- Chọn Pallet --'); unlockButton.disabled = true;
+            if (!jobnoType.value) return setNotice('Chọn Job No Type để tiếp tục.');
+            setNotice('Đang tải pallet đã khóa...');
+            try {
+                const params = new URLSearchParams({ jobno: jobno.value, jobno_type: jobnoType.value });
+                const data = await getJson(`/api/unlock-pallet/pallets?${params}`);
+                fillSelect(pallet, data.pallets, '-- Chọn Pallet --');
+                setNotice(data.pallets.length ? 'Chọn pallet cần mở khóa.' : 'Không có pallet nào đang khóa cho Job No Type này.');
+            } catch (error) { setNotice(error.message, true); }
+        });
+        pallet.addEventListener('change', () => { unlockButton.disabled = !pallet.value; });
+        unlockButton.addEventListener('click', async () => {
+            const palletNo = pallet.value;
+            if (!palletNo || !confirm(`Mở khóa pallet ${palletNo}?`)) return;
+            unlockButton.disabled = true; setNotice('Đang mở khóa...');
+            try {
+                const response = await fetch('/api/unlock_pallet', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_type: jobnoType.value, pallet_no: palletNo })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || 'Mở khóa thất bại.');
+                setNotice(data.message);
+                jobnoType.dispatchEvent(new Event('change'));
+            } catch (error) { setNotice(error.message, true); unlockButton.disabled = false; }
+        });
+        loadJobnos();
+    </script>
+</body>
+</html>
